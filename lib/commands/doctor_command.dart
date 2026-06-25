@@ -28,33 +28,6 @@ class DoctorCommand extends Command {
     await _runNormalDoctor(verbose);
   }
 
-  Future<void> _runNormalDoctor(bool verbose) async {
-    print('Doctor summary (to see all details, run tapster doctor -v):');
-
-    final issuesCount = <String, int>{};
-    final dependencyService = DependencyService();
-
-    // Small delay to ensure proper timing
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // Check each component with spinner and display immediately
-    await _checkAndDisplay('git', verbose, issuesCount, dependencyService);
-    await _checkAndDisplay('github', verbose, issuesCount, dependencyService);
-    await _checkAndDisplay('homebrew', verbose, issuesCount, dependencyService);
-    await _checkAndDisplay('network', verbose, issuesCount, dependencyService);
-
-    // Summary
-    final totalIssues = issuesCount.values.fold(0, (sum, count) => sum + count);
-    if (totalIssues == 0) {
-      final buffer = StringBuffer()..writeBullet('No issues found!');
-      print('\n$buffer');
-    } else {
-      var message = '$totalIssues issue${totalIssues > 1 ? 's' : ''} found!';
-      final buffer = StringBuffer()..writeWarning(message);
-      print('\n$buffer');
-    }
-  }
-
   Future<void> _checkAndDisplay(
     String component,
     bool verbose,
@@ -242,6 +215,33 @@ class DoctorCommand extends Command {
           }
         }
         break;
+    }
+  }
+
+  Future<void> _runNormalDoctor(bool verbose) async {
+    print('Doctor summary (to see all details, run tapster doctor -v):');
+
+    final issuesCount = <String, int>{};
+    final dependencyService = DependencyService();
+
+    // Small delay to ensure proper timing
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // Check each component with spinner and display immediately
+    await _checkAndDisplay('git', verbose, issuesCount, dependencyService);
+    await _checkAndDisplay('github', verbose, issuesCount, dependencyService);
+    await _checkAndDisplay('homebrew', verbose, issuesCount, dependencyService);
+    await _checkAndDisplay('network', verbose, issuesCount, dependencyService);
+
+    // Summary
+    final totalIssues = issuesCount.values.fold(0, (sum, count) => sum + count);
+    if (totalIssues == 0) {
+      final buffer = StringBuffer()..writeBullet('No issues found!');
+      print('\n$buffer');
+    } else {
+      var message = '$totalIssues issue${totalIssues > 1 ? 's' : ''} found!';
+      final buffer = StringBuffer()..writeWarning(message);
+      print('\n$buffer');
     }
   }
 }

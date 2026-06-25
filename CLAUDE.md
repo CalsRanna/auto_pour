@@ -50,7 +50,7 @@ dart compile exe bin/tapster.dart -o tapster
 ### 核心模块
 
 #### 命令层 (lib/commands/)
-- `init_command.dart`: 交互式配置生成器（5 种项目类型：Formula、Cask、Scoop、Formula+Scoop、Cask+Scoop）
+- `init_command.dart`: 交互式配置生成器（`-t` 指定 target，支持追加/覆盖，默认 homebrew/formula）
 - `publish_command.dart`: 包发布流程（支持 `-t` 选择目标、`-f` 强制覆盖）
 - `doctor_command.dart`: 环境检查工具（git、gh CLI、brew、网络连通性）
 - `upgrade_command.dart`: 配置升级（更新 version + checksum，支持 `-t` 指定目标）

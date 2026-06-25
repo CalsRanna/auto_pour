@@ -1,9 +1,10 @@
 import 'dart:io';
+
 import 'package:args/command_runner.dart';
 import 'package:cli_spin/cli_spin.dart';
 import 'package:tapster/models/tapster_config.dart';
-import 'package:tapster/services/config_service.dart';
 import 'package:tapster/services/asset_service.dart';
+import 'package:tapster/services/config_service.dart';
 import 'package:tapster/utils/string_buffer_extensions.dart';
 
 class UpgradeCommand extends Command {
@@ -11,7 +12,8 @@ class UpgradeCommand extends Command {
   final name = 'upgrade';
 
   @override
-  final description = 'Upgrade .tapster.yaml configuration file with new asset checksum and version';
+  final description =
+      'Upgrade .tapster.yaml configuration file with new asset checksum and version';
 
   UpgradeCommand() {
     argParser.addFlag(
@@ -29,8 +31,9 @@ class UpgradeCommand extends Command {
     argParser.addOption(
       'target',
       abbr: 't',
-      help: 'Distribution target to upgrade: formula, cask, scoop',
-      allowed: ['formula', 'cask', 'scoop'],
+      help:
+          'Distribution target to upgrade: homebrew/formula, homebrew/cask, scoop',
+      allowed: ['homebrew/formula', 'homebrew/cask', 'scoop'],
     );
   }
 
@@ -68,70 +71,74 @@ class UpgradeCommand extends Command {
       final config = await configService.loadConfig(configPath);
       spinner.stop();
       final buffer = StringBuffer()
-        ..writeSuccess('Configuration loaded ($configPath, version: ${config.version})');
+        ..writeSuccess(
+          'Configuration loaded ($configPath, version: ${config.version})',
+        );
       print(buffer.toString());
 
-    // Determine which target to upgrade
-    final selectedTarget = argResults!['target'] as String?;
-    String assetPath;
-    String? currentChecksum;
-    String targetLabel;
+      // Determine which target to upgrade
+      final selectedTarget = argResults!['target'] as String?;
+      String assetPath;
+      String? currentChecksum;
+      String targetLabel;
 
-    if (selectedTarget != null) {
-      targetLabel = selectedTarget;
-      switch (selectedTarget) {
-        case 'formula':
-          if (config.formula == null) {
-            final buf = StringBuffer()..writeError('Formula not configured');
+      if (selectedTarget != null) {
+        targetLabel = selectedTarget;
+        switch (selectedTarget) {
+          case 'homebrew/formula':
+            if (config.formula == null) {
+              final buf = StringBuffer()..writeError('Formula not configured');
+              print(buf.toString());
+              exit(1);
+            }
+            assetPath = config.formula!.asset;
+            currentChecksum = config.formula!.checksum;
+            break;
+          case 'homebrew/cask':
+            if (config.cask == null) {
+              final buf = StringBuffer()..writeError('Cask not configured');
+              print(buf.toString());
+              exit(1);
+            }
+            assetPath = config.cask!.asset;
+            currentChecksum = config.cask!.checksum;
+            break;
+          case 'scoop':
+            if (config.scoop == null) {
+              final buf = StringBuffer()..writeError('Scoop not configured');
+              print(buf.toString());
+              exit(1);
+            }
+            assetPath = config.scoop!.asset;
+            currentChecksum = config.scoop!.checksum;
+            break;
+          default:
+            final buf = StringBuffer()
+              ..writeError('Unknown target: $selectedTarget');
             print(buf.toString());
             exit(1);
-          }
+        }
+      } else {
+        // No target specified — use first configured
+        if (config.formula != null) {
           assetPath = config.formula!.asset;
           currentChecksum = config.formula!.checksum;
-          break;
-        case 'cask':
-          if (config.cask == null) {
-            final buf = StringBuffer()..writeError('Cask not configured');
-            print(buf.toString());
-            exit(1);
-          }
+          targetLabel = 'homebrew/formula';
+        } else if (config.cask != null) {
           assetPath = config.cask!.asset;
           currentChecksum = config.cask!.checksum;
-          break;
-        case 'scoop':
-          if (config.scoop == null) {
-            final buf = StringBuffer()..writeError('Scoop not configured');
-            print(buf.toString());
-            exit(1);
-          }
+          targetLabel = 'homebrew/cask';
+        } else if (config.scoop != null) {
           assetPath = config.scoop!.asset;
           currentChecksum = config.scoop!.checksum;
-          break;
-        default:
-          final buf = StringBuffer()..writeError('Unknown target: $selectedTarget');
+          targetLabel = 'scoop';
+        } else {
+          final buf = StringBuffer()
+            ..writeError('No distribution target configured');
           print(buf.toString());
           exit(1);
+        }
       }
-    } else {
-      // No target specified — use first configured
-      if (config.formula != null) {
-        assetPath = config.formula!.asset;
-        currentChecksum = config.formula!.checksum;
-        targetLabel = 'formula';
-      } else if (config.cask != null) {
-        assetPath = config.cask!.asset;
-        currentChecksum = config.cask!.checksum;
-        targetLabel = 'cask';
-      } else if (config.scoop != null) {
-        assetPath = config.scoop!.asset;
-        currentChecksum = config.scoop!.checksum;
-        targetLabel = 'scoop';
-      } else {
-        final buf = StringBuffer()..writeError('No distribution target configured');
-        print(buf.toString());
-        exit(1);
-      }
-    }
 
       // Check asset file
       final assetService = AssetService();
@@ -154,18 +161,18 @@ class UpgradeCommand extends Command {
       // Compare checksums
       if (currentChecksum == assetInfo.checksum) {
         print('');
-        final buffer = StringBuffer()
-          ..writeWarning('Asset checksum unchanged');
+        final buffer = StringBuffer()..writeWarning('Asset checksum unchanged');
         print(buffer.toString());
-        print('    The asset file has not been modified since the last upgrade.');
+        print(
+          '    The asset file has not been modified since the last upgrade.',
+        );
         print('    No upgrade needed.');
         print('');
         return;
       }
 
       print('');
-      final buffer2 = StringBuffer()
-        ..writeSuccess('Asset checksum changed');
+      final buffer2 = StringBuffer()..writeSuccess('Asset checksum changed');
       print(buffer2.toString());
       print('    Previous checksum: ${currentChecksum ?? "none"}');
       print('    New checksum: ${assetInfo.checksum}');
@@ -183,8 +190,7 @@ class UpgradeCommand extends Command {
 
       // Validate version format
       if (!_isValidVersion(finalVersion)) {
-        final buffer = StringBuffer()
-          ..writeError('Invalid version format');
+        final buffer = StringBuffer()..writeError('Invalid version format');
         print(buffer.toString());
         print('    Version should be in format like: 1.0.0, 1.2.3, etc.');
         print('');
@@ -194,12 +200,13 @@ class UpgradeCommand extends Command {
       print('');
       print('📋 Upgrade summary:');
       print('    Version: ${config.version} → $finalVersion');
-      print('    Checksum: ${currentChecksum ?? "none"} → ${assetInfo.checksum}');
+      print(
+        '    Checksum: ${currentChecksum ?? "none"} → ${assetInfo.checksum}',
+      );
       print('');
 
       if (dryRun) {
-        final buffer = StringBuffer()
-          ..writeWarning('Dry run complete');
+        final buffer = StringBuffer()..writeWarning('Dry run complete');
         print(buffer.toString());
         print('    No changes were made to the configuration file.');
         print('');
@@ -212,8 +219,7 @@ class UpgradeCommand extends Command {
 
       if (confirmation != 'y' && confirmation != 'yes') {
         print('');
-        final buffer = StringBuffer()
-          ..writeWarning('Upgrade cancelled');
+        final buffer = StringBuffer()..writeWarning('Upgrade cancelled');
         print(buffer.toString());
         print('');
         return;
@@ -222,13 +228,13 @@ class UpgradeCommand extends Command {
       // Update configuration
       TapsterConfig upgradedConfig;
       switch (targetLabel) {
-        case 'formula':
+        case 'homebrew/formula':
           upgradedConfig = config.copyWith(
             version: finalVersion,
             formula: config.formula!.copyWith(checksum: assetInfo.checksum),
           );
           break;
-        case 'cask':
+        case 'homebrew/cask':
           upgradedConfig = config.copyWith(
             version: finalVersion,
             cask: config.cask!.copyWith(checksum: assetInfo.checksum),
@@ -256,15 +262,18 @@ class UpgradeCommand extends Command {
       print('    Checksum: ${assetInfo.checksum}');
       print('');
       print('🎉 You can now publish the new version with: tapster publish');
-
     } catch (e) {
-      final buffer = StringBuffer()
-        ..writeErrorBullet('Upgrade failed');
+      final buffer = StringBuffer()..writeErrorBullet('Upgrade failed');
       print(buffer.toString());
       print('    $e');
       print('');
       exit(1);
     }
+  }
+
+  bool _isValidVersion(String version) {
+    final versionRegex = RegExp(r'^\d+(\.\d+)*$');
+    return versionRegex.hasMatch(version);
   }
 
   String _suggestNewVersion(String currentVersion) {
@@ -281,10 +290,5 @@ class UpgradeCommand extends Command {
       return '$currentVersion.1';
     }
     return currentVersion;
-  }
-
-  bool _isValidVersion(String version) {
-    final versionRegex = RegExp(r'^\d+(\.\d+)*$');
-    return versionRegex.hasMatch(version);
   }
 }
