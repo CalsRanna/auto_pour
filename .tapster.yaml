@@ -3,9 +3,9 @@
 
 name: tapster
 version: 1.0.1
-description: A command-line tool for automating Homebrew package publishing.
-homepage: https://github.com/CalsRanna/auto_homebrew
-repository: https://github.com/CalsRanna/auto_homebrew.git
+description: A command-line tool for automating Homebrew/Scoop package publishing.
+homepage: https://github.com/CalsRanna/auto_pour
+repository: https://github.com/CalsRanna/auto_pour.git
 license: MIT
 
 formula:
