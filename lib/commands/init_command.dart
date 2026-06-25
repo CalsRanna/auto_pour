@@ -57,7 +57,8 @@ class InitCommand extends Command {
     print('  [1] CLI tool → Homebrew Formula');
     print('  [2] macOS GUI → Homebrew Cask');
     print('  [3] Windows GUI → Scoop');
-    print('  [4] Cross-platform GUI → Cask + Scoop');
+    print('  [4] Cross-platform CLI → Formula + Scoop');
+    print('  [5] Cross-platform GUI → Cask + Scoop');
     final typeChoice = await _askString('Type', '1');
 
     // Get GitHub username for defaults
@@ -143,6 +144,45 @@ class InitCommand extends Command {
         break;
 
       case '4':
+        // macOS/Linux — Formula
+        final formulaAsset = await _askString('macOS/Linux binary path', 'build/macos/$name');
+        final dependencies = await _collectDependencies();
+        final tap = await _askString('Formula tap', '');
+        String? formulaChecksum;
+        if (await File(formulaAsset).exists()) {
+          formulaChecksum = await _calculateFileChecksum(formulaAsset);
+        } else {
+          final buffer = StringBuffer()
+            ..writeWarning('Formula asset file not found at $formulaAsset');
+          print(buffer.toString());
+        }
+        formula = FormulaConfig(
+          tap: tap,
+          asset: formulaAsset,
+          checksum: formulaChecksum,
+          dependencies: dependencies,
+        );
+        // Windows — Scoop
+        final winAsset = await _askString('Windows app archive path (.zip)', 'build/windows/$name.zip');
+        final bucket = await _askString('Scoop bucket', '$defaultOwner/scoop-bucket');
+        final arch = await _askString('Architecture', '64bit');
+        String? winChecksum;
+        if (await File(winAsset).exists()) {
+          winChecksum = await _calculateFileChecksum(winAsset);
+        } else {
+          final buffer = StringBuffer()
+            ..writeWarning('Windows asset file not found at $winAsset');
+          print(buffer.toString());
+        }
+        scoop = ScoopConfig(
+          bucket: bucket,
+          asset: winAsset,
+          arch: arch,
+          checksum: winChecksum,
+        );
+        break;
+
+      case '5':
         // macOS
         final macAsset = await _askString('macOS app archive path (.zip)', 'build/macos/$name.zip');
         final caskTap = await _askString('Cask tap', '');

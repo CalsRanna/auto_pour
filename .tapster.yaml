@@ -8,9 +8,9 @@ homepage: https://github.com/CalsRanna/auto_homebrew
 repository: https://github.com/CalsRanna/auto_homebrew.git
 license: MIT
 
-dependencies:
-  - gh
-
-tap: inspire
-asset: build/tapster
-checksum: 6169749ca895503d58f7afa96a8ac58e2cbfd91f27ba7a8fb36eee13e277f06c
+formula:
+  tap: inspire
+  asset: build/tapster
+  checksum: 6169749ca895503d58f7afa96a8ac58e2cbfd91f27ba7a8fb36eee13e277f06c
+  dependencies:
+    - gh
