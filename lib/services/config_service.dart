@@ -158,6 +158,9 @@ class ConfigService {
     buffer.writeln('  bucket: ${s.bucket}');
     buffer.writeln('  asset: ${s.asset}');
     buffer.writeln('  arch: ${s.arch}');
+    if (s.checksum != null) {
+      buffer.writeln('  checksum: ${s.checksum}');
+    }
     if (s.shortcuts.isNotEmpty) {
       buffer.writeln('  shortcuts:');
       for (final sc in s.shortcuts) {

@@ -26,6 +26,12 @@ class UpgradeCommand extends Command {
       help: 'Path to configuration file',
       defaultsTo: '.tapster.yaml',
     );
+    argParser.addOption(
+      'target',
+      abbr: 't',
+      help: 'Distribution target to upgrade: formula, cask, scoop',
+      allowed: ['formula', 'cask', 'scoop'],
+    );
   }
 
   @override
@@ -65,11 +71,49 @@ class UpgradeCommand extends Command {
         ..writeSuccess('Configuration loaded ($configPath, version: ${config.version})');
       print(buffer.toString());
 
-      // Determine which target to upgrade
-      String assetPath;
-      String? currentChecksum;
-      String targetLabel;
+    // Determine which target to upgrade
+    final selectedTarget = argResults!['target'] as String?;
+    String assetPath;
+    String? currentChecksum;
+    String targetLabel;
 
+    if (selectedTarget != null) {
+      targetLabel = selectedTarget;
+      switch (selectedTarget) {
+        case 'formula':
+          if (config.formula == null) {
+            final buf = StringBuffer()..writeError('Formula not configured');
+            print(buf.toString());
+            exit(1);
+          }
+          assetPath = config.formula!.asset;
+          currentChecksum = config.formula!.checksum;
+          break;
+        case 'cask':
+          if (config.cask == null) {
+            final buf = StringBuffer()..writeError('Cask not configured');
+            print(buf.toString());
+            exit(1);
+          }
+          assetPath = config.cask!.asset;
+          currentChecksum = config.cask!.checksum;
+          break;
+        case 'scoop':
+          if (config.scoop == null) {
+            final buf = StringBuffer()..writeError('Scoop not configured');
+            print(buf.toString());
+            exit(1);
+          }
+          assetPath = config.scoop!.asset;
+          currentChecksum = config.scoop!.checksum;
+          break;
+        default:
+          final buf = StringBuffer()..writeError('Unknown target: $selectedTarget');
+          print(buf.toString());
+          exit(1);
+      }
+    } else {
+      // No target specified — use first configured
       if (config.formula != null) {
         assetPath = config.formula!.asset;
         currentChecksum = config.formula!.checksum;
@@ -80,13 +124,14 @@ class UpgradeCommand extends Command {
         targetLabel = 'cask';
       } else if (config.scoop != null) {
         assetPath = config.scoop!.asset;
-        currentChecksum = null;
+        currentChecksum = config.scoop!.checksum;
         targetLabel = 'scoop';
       } else {
         final buf = StringBuffer()..writeError('No distribution target configured');
         print(buf.toString());
         exit(1);
       }
+    }
 
       // Check asset file
       final assetService = AssetService();
@@ -192,6 +237,7 @@ class UpgradeCommand extends Command {
         case 'scoop':
           upgradedConfig = config.copyWith(
             version: finalVersion,
+            scoop: config.scoop!.copyWith(checksum: assetInfo.checksum),
           );
           break;
         default:

@@ -5,7 +5,14 @@ import 'package:tapster/services/asset_service.dart';
 class ScoopService {
   Future<String> generateScoopManifest(TapsterConfig config, ScoopConfig scoopConfig) async {
     final assetService = AssetService();
-    final assetInfo = await assetService.getAssetInfo(scoopConfig.asset);
+
+    String sha256;
+    if (scoopConfig.checksum != null) {
+      sha256 = scoopConfig.checksum!;
+    } else {
+      final assetInfo = await assetService.getAssetInfo(scoopConfig.asset);
+      sha256 = assetInfo.checksum;
+    }
 
     final url = _buildDownloadUrl(config, config.version, scoopConfig.asset);
 
@@ -15,7 +22,7 @@ class ScoopService {
       'homepage': config.homepage,
       'license': config.license,
       'url': url,
-      'hash': 'sha256:${assetInfo.checksum}',
+      'hash': 'sha256:$sha256',
       'bin': _extractBinaryName(scoopConfig.asset),
       'checkver': {
         'github': config.repository.replaceAll('.git', ''),

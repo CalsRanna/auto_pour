@@ -109,7 +109,10 @@ class PublishCommand extends Command {
           final releaseNotes = 'Release ${config.version}\n\n${config.description}';
 
           int? releaseId;
-          try {
+
+          // Check if release already exists
+          final alreadyExists = await _checkReleaseExists(tagName, targetRepoString);
+          if (!alreadyExists || force) {
             releaseId = await githubService.createReleaseCLI(
               tagName: tagName,
               name: releaseName,
@@ -119,8 +122,11 @@ class PublishCommand extends Command {
               prerelease: false,
               force: force,
             );
-          } on ReleaseExistsException {
-            // Release already exists (from a previous platform publish), continue
+          } else {
+            final buf = StringBuffer()
+              ..writeWarning('Release $tagName already exists');
+            print(buf.toString());
+            print('    Adding assets from current platform');
           }
 
           // Upload all assets that exist locally
@@ -132,6 +138,10 @@ class PublishCommand extends Command {
                 assetPath: assetPath,
                 repo: targetRepoString,
               );
+            } else {
+              final buf = StringBuffer()
+                ..writeWarningBullet('Asset not found locally, skipping upload: $assetPath');
+              print(buf.toString());
             }
           }
 
@@ -163,11 +173,11 @@ class PublishCommand extends Command {
             final formula = await formulaService.generateFormula(config, formulaConfig);
             await _pushRubyFileToTap(
               fullTapPath: fullTapPath,
-              fileName: '${config.name}.rb',
+              fileName: 'Formula/${config.name}.rb',
               content: formula,
               config: config,
             );
-            return {'formula_file': '${config.name}.rb', 'tap_repo': fullTapPath};
+            return {'formula_file': 'Formula/${config.name}.rb', 'tap_repo': fullTapPath};
           },
         ));
       }
@@ -194,11 +204,11 @@ class PublishCommand extends Command {
             final cask = await caskService.generateCask(config, caskConfig);
             await _pushRubyFileToTap(
               fullTapPath: fullTapPath,
-              fileName: '${config.name}.rb',
+              fileName: 'Casks/${config.name}.rb',
               content: cask,
               config: config,
             );
-            return {'cask_file': '${config.name}.rb', 'tap_repo': fullTapPath};
+            return {'cask_file': 'Casks/${config.name}.rb', 'tap_repo': fullTapPath};
           },
         ));
       }
@@ -369,6 +379,17 @@ class PublishCommand extends Command {
     final apiResult = await Process.run('gh', apiArgs);
     if (apiResult.exitCode != 0) {
       throw Exception('Failed to push file: ${apiResult.stdout}\n${apiResult.stderr}');
+    }
+  }
+
+  Future<bool> _checkReleaseExists(String tagName, String repo) async {
+    try {
+      final result = await Process.run('gh', [
+        'release', 'view', tagName, '--repo', repo,
+      ]);
+      return result.exitCode == 0;
+    } catch (e) {
+      return false;
     }
   }
 }

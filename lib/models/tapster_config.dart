@@ -185,12 +185,14 @@ class ScoopConfig {
   final String bucket;
   final String asset;
   final String arch;
+  final String? checksum;
   final List<String> shortcuts;
 
   ScoopConfig({
     required this.bucket,
     required this.asset,
     this.arch = '64bit',
+    this.checksum,
     this.shortcuts = const [],
   });
 
@@ -199,6 +201,7 @@ class ScoopConfig {
       bucket: json['bucket'] as String,
       asset: json['asset'] as String,
       arch: json['arch'] as String? ?? '64bit',
+      checksum: json['checksum'] as String?,
       shortcuts: List<String>.from(json['shortcuts'] ?? []),
     );
   }
@@ -208,6 +211,7 @@ class ScoopConfig {
       'bucket': bucket,
       'asset': asset,
       'arch': arch,
+      if (checksum != null) 'checksum': checksum,
       'shortcuts': shortcuts,
     };
   }
@@ -216,12 +220,14 @@ class ScoopConfig {
     String? bucket,
     String? asset,
     String? arch,
+    String? checksum,
     List<String>? shortcuts,
   }) {
     return ScoopConfig(
       bucket: bucket ?? this.bucket,
       asset: asset ?? this.asset,
       arch: arch ?? this.arch,
+      checksum: checksum ?? this.checksum,
       shortcuts: shortcuts ?? this.shortcuts,
     );
   }

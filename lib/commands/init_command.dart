@@ -126,10 +126,19 @@ class InitCommand extends Command {
         final binaryPath = await _askString('App archive path (.zip)', 'build/$name.zip');
         final bucket = await _askString('Scoop bucket', '$defaultOwner/scoop-bucket');
         final arch = await _askString('Architecture', '64bit');
+        String? checksum;
+        if (await File(binaryPath).exists()) {
+          checksum = await _calculateFileChecksum(binaryPath);
+        } else {
+          final buffer = StringBuffer()
+            ..writeWarning('Asset file not found at $binaryPath');
+          print(buffer.toString());
+        }
         scoop = ScoopConfig(
           bucket: bucket,
           asset: binaryPath,
           arch: arch,
+          checksum: checksum,
         );
         break;
 
@@ -156,10 +165,19 @@ class InitCommand extends Command {
         final winAsset = await _askString('Windows app archive path (.zip)', 'build/windows/$name.zip');
         final bucket = await _askString('Scoop bucket', '$defaultOwner/scoop-bucket');
         final arch = await _askString('Architecture', '64bit');
+        String? winChecksum;
+        if (await File(winAsset).exists()) {
+          winChecksum = await _calculateFileChecksum(winAsset);
+        } else {
+          final buffer = StringBuffer()
+            ..writeWarning('Windows asset file not found at $winAsset');
+          print(buffer.toString());
+        }
         scoop = ScoopConfig(
           bucket: bucket,
           asset: winAsset,
           arch: arch,
+          checksum: winChecksum,
         );
         break;
 
