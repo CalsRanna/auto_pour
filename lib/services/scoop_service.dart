@@ -3,7 +3,11 @@ import 'package:tapster/models/tapster_config.dart';
 import 'package:tapster/services/asset_service.dart';
 
 class ScoopService {
-  Future<String> generateScoopManifest(TapsterConfig config, ScoopConfig scoopConfig) async {
+  Future<String> generateScoopManifest(
+    TapsterConfig config,
+    ScoopConfig scoopConfig, {
+    required String version,
+  }) async {
     final assetService = AssetService();
 
     String sha256;
@@ -14,10 +18,10 @@ class ScoopService {
       sha256 = assetInfo.checksum;
     }
 
-    final url = _buildDownloadUrl(config, config.version, scoopConfig.asset);
+    final url = _buildDownloadUrl(config, version, scoopConfig.asset);
 
     final manifest = <String, dynamic>{
-      'version': config.version,
+      'version': version,
       'description': config.description,
       'homepage': config.homepage,
       'license': config.license,

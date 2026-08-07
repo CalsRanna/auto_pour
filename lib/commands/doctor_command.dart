@@ -1,14 +1,23 @@
+import 'dart:io';
+
 import 'package:args/command_runner.dart';
 import 'package:cli_spin/cli_spin.dart';
-import 'package:tapster/services/dependency_service.dart';
+import 'package:tapster/models/tapster_config.dart';
+import 'package:tapster/services/config_service.dart';
+import 'package:tapster/services/git_service.dart';
 import 'package:tapster/utils/string_buffer_extensions.dart';
 
+/// 检查配置完整性与分发产物生成能力。
+///
+/// 不再检查 git/gh/brew/网络环境——tapster 只做分发，
+/// 发布执行（Release、上传、推送）由 CI 负责。
 class DoctorCommand extends Command {
   @override
   final name = 'doctor';
 
   @override
-  final description = 'Check system environment for Homebrew publishing';
+  final description =
+      'Check configuration and artifact generation readiness';
 
   DoctorCommand() {
     argParser.addFlag(
@@ -24,224 +33,201 @@ class DoctorCommand extends Command {
     if (argResults == null) return;
 
     final verbose = argResults!['verbose'] as bool;
-
-    await _runNormalDoctor(verbose);
-  }
-
-  Future<void> _checkAndDisplay(
-    String component,
-    bool verbose,
-    Map<String, int> issuesCount,
-    DependencyService dependencyService,
-  ) async {
-    final spinner = CliSpin()..start();
-
-    Map<String, dynamic> result;
-
-    try {
-      result = await dependencyService.checkDoctorComponent(component);
-    } catch (e) {
-      result = <String, dynamic>{
-        'valid': false,
-        'issues': ['Failed to check $component: $e'],
-      };
-    } finally {
-      spinner.stop();
-    }
-
-    // Count issues
-    final issueCount = (result['issues'] as List).length;
-    issuesCount[component] = issueCount;
-
-    // Display the result immediately
-    _displayComponentResult(component, result, verbose);
-  }
-
-  void _displayComponentResult(
-    String component,
-    Map<String, dynamic> result,
-    bool verbose,
-  ) {
-    switch (component) {
-      case 'git':
-        if (result['valid'] && (result['issues'] as List).isEmpty) {
-          final buffer = StringBuffer()
-            ..writeSuccess('Git (${result['version']})');
-          print(buffer.toString());
-          if (verbose) {
-            final buffer2 = StringBuffer()
-              ..writeBullet('    Git ${result['version']}');
-            print(buffer2.toString());
-            final buffer3 = StringBuffer()
-              ..writeBullet('    User config: configured');
-            print(buffer3.toString());
-          }
-        } else {
-          final buffer = StringBuffer()..writeWarning('Git');
-          print(buffer.toString());
-          if (verbose) {
-            print('    ${result['version']}');
-            for (final issue in result['issues']) {
-              print('    $issue');
-            }
-            if (result['issues'].any((issue) => issue.contains('config'))) {
-              print('    Fix: Set git config --global user.name "Your Name"');
-              print(
-                '          git config --global user.email "your.email@example.com"',
-              );
-            }
-          }
-        }
-        break;
-
-      case 'github':
-        if (result['valid'] && (result['issues'] as List).isEmpty) {
-          final version = result['version'] as String;
-          final cleanVersion = version.split('\n').first;
-          final buffer = StringBuffer()
-            ..writeSuccess('GitHub CLI ($cleanVersion)');
-          print(buffer.toString());
-          if (verbose) {
-            final buffer2 = StringBuffer()..writeBullet('    gh $cleanVersion');
-            print(buffer2.toString());
-            if (result['authenticated'] == true) {
-              final buffer3 = StringBuffer()
-                ..writeBullet('    GitHub CLI: authenticated');
-              print(buffer3.toString());
-              if (result['username'] != null) {
-                final buffer4 = StringBuffer()
-                  ..writeBullet('    Account: ${result['username']}');
-                print(buffer4.toString());
-              }
-              if (result['auth_method'] != null) {
-                final buffer5 = StringBuffer()
-                  ..writeBullet('    Auth method: ${result['auth_method']}');
-                print(buffer5.toString());
-              }
-            }
-            if (result['api_access'] == true) {
-              final buffer6 = StringBuffer()
-                ..writeBullet('    GitHub API: accessible');
-              print(buffer6.toString());
-            }
-          }
-        } else {
-          final buffer = StringBuffer()..writeWarning('GitHub CLI');
-          print(buffer.toString());
-          if (verbose) {
-            print('    ${result['version']}');
-            for (final issue in result['issues']) {
-              print('    $issue');
-            }
-            if (result['authenticated'] != true) {
-              print('    Fix: gh auth login to authenticate with GitHub');
-            }
-          }
-        }
-        break;
-
-      case 'homebrew':
-        if (result['valid'] && (result['issues'] as List).isEmpty) {
-          final buffer = StringBuffer()
-            ..writeSuccess('Homebrew (${result['version']})');
-          print(buffer.toString());
-          if (verbose) {
-            final buffer2 = StringBuffer()
-              ..writeBullet('    Homebrew ${result['version']}');
-            print(buffer2.toString());
-            if (result['taps'] != null) {
-              final taps = result['taps'] as List;
-              final buffer3 = StringBuffer()
-                ..writeBullet('    ${taps.length} taps installed');
-              print(buffer3.toString());
-              for (final tap in taps.take(3)) {
-                final buffer4 = StringBuffer()..writeBullet('    $tap');
-                print(buffer4.toString());
-              }
-              if (taps.length > 3) {
-                final buffer5 = StringBuffer()
-                  ..writeBullet('    ... and ${taps.length - 3} more');
-                print(buffer5.toString());
-              }
-            }
-          }
-        } else {
-          final buffer = StringBuffer()..writeWarning('Homebrew');
-          print(buffer.toString());
-          if (verbose) {
-            print('    ${result['version']}');
-            for (final issue in result['issues']) {
-              print('    $issue');
-            }
-          }
-        }
-        break;
-
-      case 'network':
-        if (result['valid'] && (result['issues'] as List).isEmpty) {
-          final buffer = StringBuffer()
-            ..writeSuccess('Network connectivity to GitHub');
-          print(buffer.toString());
-          if (verbose) {
-            final buffer2 = StringBuffer()
-              ..writeBullet('    GitHub: accessible');
-            print(buffer2.toString());
-            if (result['api_accessible'] == true) {
-              final buffer3 = StringBuffer()
-                ..writeBullet('    GitHub API: accessible');
-              print(buffer3.toString());
-              if (result['rate_limit_remaining'] != null) {
-                final buffer4 = StringBuffer()
-                  ..writeBullet(
-                    '    Rate limit: ${result['rate_limit_remaining']} remaining',
-                  );
-                print(buffer4.toString());
-              }
-            }
-            if (result['ssh_working'] == true) {
-              final buffer5 = StringBuffer()
-                ..writeBullet('    SSH to GitHub: working');
-              print(buffer5.toString());
-            }
-          }
-        } else {
-          final buffer = StringBuffer()
-            ..writeWarning('Network connectivity to GitHub');
-          print(buffer.toString());
-          if (verbose) {
-            for (final issue in result['issues']) {
-              print('    $issue');
-            }
-          }
-        }
-        break;
-    }
-  }
-
-  Future<void> _runNormalDoctor(bool verbose) async {
     print('Doctor summary (to see all details, run tapster doctor -v):');
 
-    final issuesCount = <String, int>{};
-    final dependencyService = DependencyService();
+    final issues = <String>[];
+    final warnings = <String>[];
 
-    // Small delay to ensure proper timing
-    await Future.delayed(const Duration(milliseconds: 100));
+    // 1. Configuration file
+    final spinner = CliSpin()..start();
+    TapsterConfig? config;
+    try {
+      config = await ConfigService().loadConfig(null);
+      spinner.stop();
+      final buffer = StringBuffer()
+        ..writeSuccess('Configuration (.tapster.yaml)');
+      print(buffer.toString());
+      if (verbose) {
+        print('    name: ${config.name}');
+        print('    version: ${config.version}');
+      }
+    } catch (e) {
+      spinner.stop();
+      final buffer = StringBuffer()..writeError('Configuration');
+      print(buffer.toString());
+      print('    $e');
+      issues.add('Configuration is invalid: $e');
+      _displaySummary(issues, warnings);
+      return;
+    }
 
-    // Check each component with spinner and display immediately
-    await _checkAndDisplay('git', verbose, issuesCount, dependencyService);
-    await _checkAndDisplay('github', verbose, issuesCount, dependencyService);
-    await _checkAndDisplay('homebrew', verbose, issuesCount, dependencyService);
-    await _checkAndDisplay('network', verbose, issuesCount, dependencyService);
+    // 2. Distribution targets
+    final targets = <String, Map<String, String>>{
+      if (config.formula != null)
+        'formula': {
+          'tap': config.formula!.tap,
+          'asset': config.formula!.asset,
+          'checksum': config.formula!.checksum ?? '',
+        },
+      if (config.cask != null)
+        'cask': {
+          'tap': config.cask!.tap,
+          'asset': config.cask!.asset,
+          'checksum': config.cask!.checksum ?? '',
+        },
+      if (config.scoop != null)
+        'scoop': {
+          'tap': config.scoop!.bucket,
+          'asset': config.scoop!.asset,
+          'checksum': config.scoop!.checksum ?? '',
+        },
+    };
 
-    // Summary
-    final totalIssues = issuesCount.values.fold(0, (sum, count) => sum + count);
-    if (totalIssues == 0) {
-      final buffer = StringBuffer()..writeBullet('No issues found!');
-      print('\n$buffer');
+    if (targets.isEmpty) {
+      final buffer = StringBuffer()
+        ..writeError('Distribution targets');
+      print(buffer.toString());
+      print('    No target configured — run "tapster init -t <target>"');
+      issues.add('No distribution target configured');
     } else {
-      var message = '$totalIssues issue${totalIssues > 1 ? 's' : ''} found!';
-      final buffer = StringBuffer()..writeWarning(message);
-      print('\n$buffer');
+      final buffer = StringBuffer()
+        ..writeSuccess(
+          'Distribution targets (${targets.length}): '
+          '${targets.keys.join(', ')}',
+        );
+      print(buffer.toString());
+    }
+
+    // 3. Checksum availability for each target
+    for (final entry in targets.entries) {
+      await _checkChecksumAvailability(
+        entry.key,
+        entry.value['asset']!,
+        entry.value['checksum']!,
+        verbose,
+        issues,
+        warnings,
+      );
+    }
+
+    // 4. Git tag (publish resolves the version from tags)
+    await _checkGitTag(verbose, warnings);
+
+    // 5. Output directory writability
+    await _checkOutputDirectory(verbose, issues);
+
+    _displaySummary(issues, warnings);
+  }
+
+  Future<void> _checkChecksumAvailability(
+    String target,
+    String assetPath,
+    String configuredChecksum,
+    bool verbose,
+    List<String> issues,
+    List<String> warnings,
+  ) async {
+    if (configuredChecksum.isNotEmpty) {
+      final buffer = StringBuffer()
+        ..writeSuccess('$target: checksum configured');
+      print(buffer.toString());
+      if (verbose) {
+        print('    ${configuredChecksum.substring(0, 16)}...');
+      }
+      return;
+    }
+
+    final assetFile = File(assetPath);
+    if (await assetFile.exists()) {
+      final buffer = StringBuffer()
+        ..writeSuccess('$target: asset available ($assetPath)');
+      print(buffer.toString());
+      if (verbose) {
+        print('    checksum will be computed from the local asset');
+      }
+      return;
+    }
+
+    final buffer = StringBuffer()..writeError('$target: checksum unavailable');
+    print(buffer.toString());
+    print(
+      '    Neither a configured checksum nor a local asset: $assetPath',
+    );
+    print(
+      '    Fix: add a checksum to .tapster.yaml, or build the asset first',
+    );
+    issues.add('$target has no checksum source');
+  }
+
+  Future<void> _checkGitTag(bool verbose, List<String> warnings) async {
+    final gitService = GitService();
+    final isRepo = await gitService.isGitRepository();
+    if (!isRepo) {
+      final buffer = StringBuffer()
+        ..writeWarning('Git repository');
+      print(buffer.toString());
+      print(
+        '    Not inside a git repository — publish cannot resolve the '
+        'version from tags',
+      );
+      warnings.add('Not inside a git repository');
+      return;
+    }
+
+    final tag = await gitService.resolveCurrentTag();
+    if (tag == null) {
+      final buffer = StringBuffer()
+        ..writeWarning('Git tag');
+      print(buffer.toString());
+      print(
+        '    No tag found on HEAD — publish requires a tag (or --version)',
+      );
+      print('    Fix: git tag v1.0.0 && git push origin v1.0.0');
+      warnings.add('No git tag found');
+      return;
+    }
+
+    final buffer = StringBuffer()..writeSuccess('Git tag ($tag)');
+    print(buffer.toString());
+  }
+
+  Future<void> _checkOutputDirectory(
+    bool verbose,
+    List<String> issues,
+  ) async {
+    const outputDir = 'dist';
+    final probe = File('$outputDir/.tapster-write-test');
+    try {
+      await probe.parent.create(recursive: true);
+      await probe.writeAsString('test');
+      await probe.delete();
+      final buffer = StringBuffer()..writeSuccess('Output directory ($outputDir)');
+      print(buffer.toString());
+    } catch (e) {
+      final buffer = StringBuffer()..writeError('Output directory ($outputDir)');
+      print(buffer.toString());
+      print('    Cannot write to $outputDir: $e');
+      issues.add('Output directory is not writable: $outputDir');
+    }
+  }
+
+  void _displaySummary(List<String> issues, List<String> warnings) {
+    print('');
+    if (issues.isEmpty && warnings.isEmpty) {
+      final buffer = StringBuffer()..writeBullet('No issues found!');
+      print('$buffer');
+      return;
+    }
+    if (warnings.isNotEmpty) {
+      final buffer = StringBuffer()
+        ..writeWarning('${warnings.length} warning(s) found');
+      print('$buffer');
+    }
+    if (issues.isNotEmpty) {
+      final buffer = StringBuffer()
+        ..writeError('${issues.length} issue(s) found');
+      print('$buffer');
+      exit(1);
     }
   }
 }

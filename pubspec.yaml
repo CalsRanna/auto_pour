@@ -11,12 +11,10 @@ dependencies:
   args: ^2.5.0
   path: ^1.9.0
   yaml: ^3.1.2
-  http: ^1.2.1
   meta: ^1.15.0
   collection: ^1.18.0
   crypto: ^3.0.5
   cli_spin: ^1.0.1
-  process_run: ^1.0.0
 
 dev_dependencies:
   lints: ^6.0.0

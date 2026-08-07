@@ -24,7 +24,11 @@ class {{CLASS_NAME}} < Formula
 end
 ''';
 
-  Future<String> generateFormula(TapsterConfig config, FormulaConfig formulaConfig) async {
+  Future<String> generateFormula(
+    TapsterConfig config,
+    FormulaConfig formulaConfig, {
+    required String version,
+  }) async {
     final assetService = AssetService();
     final now = DateTime.now().toUtc();
     final timestamp = now.toIso8601String();
@@ -39,9 +43,10 @@ end
 
     // Handle asset
     if (formulaConfig.asset.isNotEmpty) {
-      final assetInfo = await assetService.getAssetInfo(formulaConfig.asset);
-      context['URL'] = _getDefaultUrl(config, config.version);
-      context['SHA256'] = formulaConfig.checksum ?? assetInfo.checksum;
+      context['URL'] = _getDefaultUrl(config, version);
+      // 预置 checksum 时不读取本地 asset（跨平台发布时 asset 可能不在本地）
+      context['SHA256'] = formulaConfig.checksum ??
+          (await assetService.getAssetInfo(formulaConfig.asset)).checksum;
       context['EXECUTABLE_NAME'] = _getExecutableName(formulaConfig.asset);
     }
 

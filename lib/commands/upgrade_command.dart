@@ -261,7 +261,11 @@ class UpgradeCommand extends Command {
       print('    Version: $finalVersion');
       print('    Checksum: ${assetInfo.checksum}');
       print('');
-      print('🎉 You can now publish the new version with: tapster publish');
+      print('🎉 You can now generate distribution artifacts with: tapster publish');
+      print('    Note: the release version is resolved from the git tag, so');
+      print(
+        '    create a tag first: git tag v$finalVersion && git push origin v$finalVersion',
+      );
     } catch (e) {
       final buffer = StringBuffer()..writeErrorBullet('Upgrade failed');
       print(buffer.toString());

@@ -20,7 +20,11 @@ cask "{{NAME}}" do
 end
 ''';
 
-  Future<String> generateCask(TapsterConfig config, CaskConfig caskConfig) async {
+  Future<String> generateCask(
+    TapsterConfig config,
+    CaskConfig caskConfig, {
+    required String version,
+  }) async {
     final assetService = AssetService();
 
     String sha256;
@@ -31,11 +35,11 @@ end
       sha256 = assetInfo.checksum;
     }
 
-    final url = _buildDownloadUrl(config, config.version, caskConfig.asset);
+    final url = _buildDownloadUrl(config, version, caskConfig.asset);
 
     final context = <String, String>{
       'NAME': config.name,
-      'VERSION': config.version,
+      'VERSION': version,
       'SHA256': sha256,
       'URL': url,
       'APP_NAME': caskConfig.appName.replaceAll('.app', ''),
