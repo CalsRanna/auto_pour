@@ -1,8 +1,17 @@
 # Tapster - 分发工具
 
-Tapster 是一个用 Dart 编写的命令行工具，**只做分发（distribution）**：基于 `.tapster.yaml` 配置文件，生成 Homebrew Formula / Cask 和 Scoop manifest 分发产物。
+Tapster 是一个用 Dart 编写的命令行工具，**只做分发（distribution）**：读取远端仓库的 Release 信息（tag + asset digest），基于 `.tapster.yaml` 配置生成 Homebrew Formula / Cask 和 Scoop manifest，并写入用户设置的托管仓库（tap / bucket）。
 
-tapster **不做**构建、不创建 GitHub Release、不上传 asset、不推送任何仓库——这些执行动作属于 CI。tapster 产出 manifest 文件，由你的 CI 流水线推送到对应的目标仓库。
+**职责边界**：
+
+```
+被发布仓库（仓库 B）自己的 CI：构建 → 打 tag → 创建 Release → 上传 asset
+  只碰自己的仓库，GITHUB_TOKEN 足够，零跨仓库凭据
+
+tapster（发布侧，本地，gh 已登录）：读远端 Release 信息 → 生成 manifest → 写入托管仓库
+```
+
+tapster **不做**构建、不创建 Release、不上传 asset——这些是被发布仓库自己的 CI 的职责。tapster 的"分发"是：读远端状态（gh 已登录可读公开数据）、生成 manifest、写托管仓库（本地凭据写用户自己的仓库）。
 
 支持跨平台发布——同一版本可在不同操作系统上分次构建，每个平台生成各自的分发产物。
 
@@ -11,22 +20,20 @@ tapster **不做**构建、不创建 GitHub Release、不上传 asset、不推�
 - 📝 **配置驱动**: 通过 `.tapster.yaml` 配置文件管理项目信息和发布设置
 - 🎯 **多目标支持**: 同时支持 Homebrew Formula、Homebrew Cask、Scoop 三种分发目标
 - 🌐 **跨平台分发**: 同一版本可在 macOS/Windows/Linux 上分次生成产物，Release 共享、仓库独立
+- 🏷️ **版本来自远端 Release**: 发布版本自动从远端最新 Release tag 解析（`--version` 可覆盖）
+- 📦 **权威 checksum**: 自动从远端 Release asset 读取 digest（sha256），跨环境构建也一致
 - 🏗️ **模板生成**: 自动生成符合规范的 Formula/Cask Ruby 文件和 Scoop JSON manifest
-- 📦 **资源管理**: 自动处理 SHA256 哈希值计算（配置预置优先）
-- 🏷️ **版本来自 git tag**: 发布版本自动从最近 tag 解析，无需手动维护
+- 📤 **推送托管仓库**: 生成后自动写入托管仓库（Homebrew tap / Scoop bucket），用本地 gh 凭据
 - 🛡️ **配置验证**: 严格验证配置文件的完整性和正确性
 - 🎯 **交互式配置**: 通过向导式界面生成项目配置，支持追加/覆盖
 - 🔄 **配置升级**: `upgrade` 命令自动更新 version 和 checksum
-- 🔍 **生成检查**: `doctor` 命令检查配置完整性与分发产物生成能力
-
-**职责边界**：tapster 只负责"生成分发产物"。创建 Release、上传 asset、推送 manifest 到 tap/bucket 仓库全部由 CI 完成（见 [CI 集成](#-ci-集成)）。
+- 🔍 **就绪检查**: `doctor` 命令检查配置、gh 认证、checksum 可得性、远端 Release
 
 ## 📋 系统要求
 
 - **Dart**: 3.9.0 或更高版本
-- **Git**: 已安装（用于从 tag 解析版本号）
-
-> 不需要 GitHub CLI、Homebrew 或网络认证——tapster 本地零网络操作。
+- **Git**: 已安装（版本解析的 fallback 来源）
+- **GitHub CLI**: 已安装并认证（`gh auth login`）——读取远端 Release、推送托管仓库都依赖它
 
 ## 🚀 快速开始
 
@@ -63,33 +70,33 @@ tapster init -t scoop
 tapster init -t homebrew/cask -t scoop
 ```
 
-### 3. 检查配置与生成能力
+### 3. 检查分发就绪状态
 
 ```bash
-# 检查配置完整性、checksum 可得性、git tag、输出目录
+# 检查配置完整性、gh 认证、远端 Release、checksum 可得性、输出目录
 dart run bin/tapster.dart doctor
 
 # 详细模式
 dart run bin/tapster.dart doctor -v
 ```
 
-### 4. 生成分发产物
+### 4. 分发
 
 ```bash
-# 生成所有已配置目标的分发产物（版本从最近 git tag 解析）
+# 发布所有已配置目标（默认：读远端 Release → 生成 manifest → 推送托管仓库）
 dart run bin/tapster.dart publish
 
-# 指定输出目录
-dart run bin/tapster.dart publish -o dist
+# 只生成不推送（预览产物）
+dart run bin/tapster.dart publish --dry-run
 
-# 只生成指定目标
+# 只分发指定目标
 dart run bin/tapster.dart publish -t homebrew/cask
 
-# 显式指定版本（跳过 tag 解析）
+# 显式指定版本（跳过远端 Release tag 解析）
 dart run bin/tapster.dart publish --version 2.0.0
 ```
 
-产物结构（直接对应目标仓库布局）：
+产物会生成到 `dist/`（可用 `-o` 指定），结构直接对应目标仓库布局：
 
 ```
 dist/
@@ -104,67 +111,60 @@ dist/
 # 1. 初始化配置（一次性）
 tapster init -t homebrew/cask -t scoop
 
-# 2. 构建（按项目实际情况，此处以 tapster 自身为例）
-dart compile exe bin/tapster.dart -o build/tapster
-
-# 3. 升级配置：计算新 checksum、确认版本
-tapster upgrade
-
-# 4. 打 tag（发布版本以 tag 为准）
+# 2. 构建并打 tag（被发布仓库自己的 CI 会构建并创建 Release）
 git tag v2.0.0 && git push origin v2.0.0
+#   → 仓库 B 的 CI：构建 → 创建 Release v2.0.0 → 上传 asset
 
-# 5. 生成分发产物
-tapster publish -o dist
-
-# 6. 推送到目标仓库（CI 完成，见下节）
+# 3. 分发（等 Release 建好后，发布侧执行）
+tapster publish
+#   → 读远端 Release v2.0.0 + asset digest
+#   → 生成 manifest（checksum 与已发布 asset 一致）
+#   → 推送托管仓库
 ```
 
-## 🤖 CI 集成
+## 🤖 被发布仓库的 CI
 
-tapster 的发布执行全部在 CI 中完成。以下是一个完整的 GitHub Actions workflow 示例：
+**tapster 不需要在 CI 里跑**——它跑在发布侧（通常是开发者的本地，gh 已登录）。被发布仓库（仓库 B）自己的 CI 只负责构建和 Release：
 
 ```yaml
+# .github/workflows/publish.yml —— 放在被发布仓库（如你分发的工具仓库）
 name: Publish
 on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0          # 需要 tag 历史
+          fetch-depth: 0
 
       # 1. 构建（按项目实际情况填写）
       - run: dart compile exe bin/tapster.dart -o build/tapster
 
-      # 2. 安装 tapster 并生成分发产物（版本自动取自 git tag）
-      - run: |
-          dart pub get
-          dart compile exe bin/tapster.dart -o tapster
-          ./tapster publish -o dist
+      # 2. 创建 Release 并上传 asset（只碰当前仓库，GITHUB_TOKEN 足够）
+      - run: gh release create "$GITHUB_REF_NAME" build/tapster --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+```
 
-      # 3. 创建 Release 并上传 asset
-      - run: |
-          gh release create "v$(git describe --tags --abbrev=0)" \
-            build/tapster --generate-notes
+Release 建好后，在发布侧（本地）执行 `tapster publish`：
 
-      # 4. 推送 manifest 到 tap 仓库（Contents API）
-      #    需要目标仓库的写权限：请使用带该权限的独立 token
-      - run: |
-          gh api -X PUT repos/{owner}/homebrew-taps/contents/Formula/tapster.rb \
-            -f message="release v$(git describe --tags --abbrev=0)" \
-            -f content="$(base64 < dist/Formula/tapster.rb)" \
-            -f branch=main
+```bash
+tapster publish
+# 输出示例：
+#   Remote release: v2.0.0 (1 asset(s) with digest)
+#   ✓ Formula pushed to CalsRanna/homebrew-inspire
 ```
 
 ### 跨平台发布
 
-macOS / Windows 的构建产物分别在不同平台上构建，Release 共享、manifest 各自推送：
+macOS / Windows 的构建产物分别在不同平台上构建，Release 共享：
 
 ```yaml
 jobs:
@@ -174,9 +174,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - run: # ... 构建 macOS 产物 ...
-      - run: tapster publish -t homebrew/cask -o dist
-      - run: gh release create "v$(git describe --tags --abbrev=0)" build/macos/*.zip --generate-notes || true
-      - run: # ... 推送 dist/Casks/*.rb 到 cask tap ...
+      - run: gh release create "v$GITHUB_REF_NAME" build/macos/*.zip --generate-notes || true
 
   publish-windows:
     runs-on: windows-latest
@@ -184,12 +182,12 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - run: # ... 构建 Windows 产物 ...
-      - run: tapster publish -t scoop -o dist
-      - run: gh release upload "v$(git describe --tags --abbrev=0)" build/windows/*.zip || true
-      - run: # ... 推送 dist/*.json 到 bucket ...
+      - run: gh release upload "v$GITHUB_REF_NAME" build/windows/*.zip || true
 ```
 
 > `gh release create` 仅在首次触发时创建 Release；第二个平台用 `gh release upload` 追加 asset（`|| true` 容忍 asset 已存在）。
+>
+> 之后在发布侧分平台执行 `tapster publish -t homebrew/cask` / `tapster publish -t scoop`，各自推送托管仓库。由于 checksum 来自远端 asset digest，跨平台构建也保持一致。
 
 ## ⚙️ 配置文件
 
@@ -311,27 +309,37 @@ tapster init [选项]
 - `-f, --force`: 强制覆盖已配置的目标
 - `-t, --target`: 分发目标（`homebrew/formula` / `homebrew/cask` / `scoop`），默认 `formula`，可多次使用
 
-### `publish` - 生成分发产物
+### `publish` - 分发
 
-读取配置并生成分发产物到输出目录。**不执行任何远程操作**——创建 Release、上传 asset、推送 manifest 由 CI 完成。
+读取远端 Release 信息，生成分发产物并推送到托管仓库：
 
 ```bash
 tapster publish [选项]
 ```
 
 **选项：**
+- `--dry-run`: 只生成产物到 `-o` 目录，不推送托管仓库
 - `-o, --output`: 输出目录（默认 `dist`）
-- `--version`: 发布版本（默认从最近 git tag 解析，如 `v1.2.3` → `1.2.3`）
+- `--version`: 发布版本（默认从远端最新 Release tag 解析，如 `v1.2.3` → `1.2.3`）
 - `-t, --target`: 指定目标（`homebrew/formula` / `homebrew/cask` / `scoop`），可多次使用
 
-**生成流程：**
+**分发流程：**
 1. 加载和验证配置文件
-2. 解析版本（`--version` 优先，否则取最近 git tag；与配置 version 不一致时警告）
+2. 读远端最新 Release（`gh api`）：tag 作为版本号，asset digest 作为 checksum
 3. 生成 Formula → `dist/Formula/{name}.rb`（如配置）
 4. 生成 Cask → `dist/Casks/{name}.rb`（如配置）
 5. 生成 Scoop manifest → `dist/{name}.json`（如配置）
+6. 推送到托管仓库：formula → `Formula/{name}.rb`、cask → `Casks/{name}.rb`、
+   scoop → `{name}.json`（`--dry-run` 跳过此步）
 
-**checksum 解析**：配置预置值优先；未预置时从本地 asset 计算；两者皆无则报错。
+**版本解析优先级**：`--version` > 远端最新 Release tag > 本地 git tag。
+
+**checksum 解析优先级**：远端 Release asset digest（权威，与已发布 asset 一致）>
+配置预置 > 本地 asset 计算。
+
+**托管仓库解析**：`tap: owner/inspire` → 仓库 `owner/homebrew-inspire`（Homebrew
+命名规范，已带 `homebrew-` 前缀则不重复）；`bucket: owner/bucket` → 直接推送
+`owner/bucket`。
 
 ### `upgrade` - 配置升级
 
@@ -352,11 +360,13 @@ tapster upgrade [选项]
 3. 建议新版本号（patch +1）
 4. 确认后更新配置并保存
 
-> 发布版本最终以 git tag 为准，upgrade 后记得打 tag：`git tag v1.1.0 && git push origin v1.1.0`
+> `upgrade` 用于维护配置中记录的 checksum（分发的 fallback 来源）。
+> 分发时版本以远端 Release 为准，upgrade 后记得让仓库 B 的 CI 打 tag 并创建
+> Release：`git tag v1.1.0 && git push origin v1.1.0`
 
-### `doctor` - 生成能力检查
+### `doctor` - 分发就绪检查
 
-检查配置完整性与分发产物生成能力：
+检查分发所需的前置条件：
 
 ```bash
 tapster doctor [选项]
@@ -368,8 +378,10 @@ tapster doctor [选项]
 **检查项目：**
 - 配置文件存在且通过验证
 - 至少配置了一个分发目标
-- 每个目标的 checksum 可得（配置预置，或 asset 本地存在）
-- git 仓库中可解析 tag（发布前提，警告级）
+- gh 已安装并认证（读取远端 Release、推送托管仓库的依赖）
+- 远端 Release 可达（tag + asset digest 可读）
+- 每个目标的 checksum 可得（远端 digest / 配置预置 / 本地 asset，任一即可）
+- git 仓库中可解析 tag（版本 fallback，警告级）
 - 输出目录可写
 
 ## 🏗️ 项目架构
@@ -378,20 +390,22 @@ tapster doctor [选项]
 lib/
 ├── commands/                  # 命令层
 │   ├── init_command.dart      # 交互式配置生成
-│   ├── publish_command.dart   # 分发产物生成（版本从 git tag 解析）
-│   ├── doctor_command.dart    # 配置/生成能力检查
+│   ├── publish_command.dart   # 分发：读远端 Release → 生成 → 推送托管仓库
+│   ├── doctor_command.dart    # 分发就绪检查
 │   └── upgrade_command.dart   # 配置升级
 ├── services/                  # 服务层
 │   ├── config_service.dart    # YAML 读/写/验证/迁移
+│   ├── github_service.dart    # gh 封装：远端 Release 读取 + Contents API 推送
 │   ├── formula_service.dart   # Formula 模板渲染
 │   ├── cask_service.dart      # Cask 模板渲染
 │   ├── scoop_service.dart     # Scoop manifest 生成
 │   ├── asset_service.dart     # 资源处理与哈希计算
-│   └── git_service.dart       # git tag 解析
+│   └── git_service.dart       # git tag 解析（版本 fallback）
 ├── models/                    # 数据模型
 │   └── tapster_config.dart    # 配置模型 (TapsterConfig / FormulaConfig / CaskConfig / ScoopConfig)
 └── utils/                     # 工具类
     ├── config_validator.dart  # 配置验证
+    ├── repo_utils.dart        # 仓库 URL / tap 名解析
     ├── status_markers.dart    # 状态标记
     └── string_buffer_extensions.dart # 彩色输出
 ```
@@ -431,10 +445,14 @@ mkdir my-cli && cd my-cli
 # 默认 homebrew/formula
 tapster init
 # ... 构建二进制 ...
+
+# 1. 打 tag → 仓库 B 的 CI 构建并创建 Release
+git tag v1.0.0 && git push origin v1.0.0
+
+# 2. 等 Release 建好后，本地分发
 tapster doctor
-git tag v1.0.0
-tapster publish -o dist
-# CI：创建 Release、上传 asset、推送 dist/Formula/*.rb 到 tap
+tapster publish
+# → 读远端 v1.0.0 + asset digest → 生成 formula → 推 homebrew-tap
 ```
 
 ### 跨平台 GUI 发布
@@ -444,27 +462,21 @@ tapster publish -o dist
 mkdir my-app && cd my-app
 tapster init -t homebrew/cask -t scoop
 
-# 2. macOS 上构建并生成产物
-# ... 构建 macOS .zip ...
-tapster upgrade -t homebrew/cask
-tapster publish -t homebrew/cask -o dist
+# 2. 打 tag → 仓库 B 的 CI 分别构建 macOS/Windows 产物并上传到同一 Release
+git tag v2.0.0 && git push origin v2.0.0
 
-# 3. Windows 上构建并生成产物
-# ... 构建 Windows .zip ...
-tapster upgrade -t scoop
-tapster publish -t scoop -o dist
+# 3. macOS 上分发 cask（checksum 自动取远端 macOS asset 的 digest）
+tapster publish -t homebrew/cask
 
-# 4. CI 分别推送两个平台的 manifest
+# 4. Windows 上分发 scoop（checksum 自动取远端 Windows asset 的 digest）
+tapster publish -t scoop
 ```
 
 ## 🐛 故障排除
 
-**1. publish 报 "No git tag found"**
-```bash
-git tag v1.0.0
-# 或显式指定版本
-tapster publish --version 1.0.0
-```
+**1. publish 报 "No release found ... no local git tag"**
+- 先让仓库 B 的 CI 打 tag 并创建 Release
+- 或显式指定版本：`tapster publish --version 1.0.0`
 
 **2. 配置文件验证失败**
 ```bash
@@ -472,17 +484,19 @@ tapster doctor -v
 tapster init --force
 ```
 
-**3. checksum 不可得（asset 不在本地也未预置）**
+**3. gh 未认证（读取远端、推送托管仓库都依赖 gh）**
+```bash
+gh auth login
+gh auth status
+```
+
+**4. 远端 Release 没有 asset digest 时 checksum 不可得**
 - 在 `.tapster.yaml` 中预置 `checksum`（`tapster upgrade` 可计算）
-- 跨平台发布时，各平台在本地构建后分别执行 `upgrade` + `publish -t`
+- 或本地有 asset 时 tapster 自动计算
 
-**4. 发布版本与配置版本不一致的警告**
-- 正常现象：publish 以 git tag 为准
-- 想同步：运行 `tapster upgrade` 更新配置
-
-**5. CI 推送 manifest 到目标仓库失败**
-- 确认 CI 使用的 token 对目标仓库（tap/bucket）有写权限
-- Contents API 需要 `repo` scope
+**5. 推送托管仓库失败**
+- 确认本地 gh 登录的账号对托管仓库（tap/bucket）有写权限
+- 确认 tap 命名正确：`owner/inspire` 对应仓库 `owner/homebrew-inspire`
 
 ## 🤝 贡献
 

@@ -5,19 +5,20 @@ import 'package:cli_spin/cli_spin.dart';
 import 'package:tapster/models/tapster_config.dart';
 import 'package:tapster/services/config_service.dart';
 import 'package:tapster/services/git_service.dart';
+import 'package:tapster/services/github_service.dart';
+import 'package:tapster/utils/repo_utils.dart';
 import 'package:tapster/utils/string_buffer_extensions.dart';
 
-/// 检查配置完整性与分发产物生成能力。
+/// 检查分发就绪状态：配置完整性、gh 认证、checksum 可得性、
+/// 远端 release、git tag、输出目录。
 ///
-/// 不再检查 git/gh/brew/网络环境——tapster 只做分发，
-/// 发布执行（Release、上传、推送）由 CI 负责。
+/// 分发的执行（推送托管仓库）依赖本地 gh 凭据，因此 gh 是检查项之一。
 class DoctorCommand extends Command {
   @override
   final name = 'doctor';
 
   @override
-  final description =
-      'Check configuration and artifact generation readiness';
+  final description = 'Check distribution readiness (config, gh, checksums)';
 
   DoctorCommand() {
     argParser.addFlag(
@@ -98,35 +99,118 @@ class DoctorCommand extends Command {
       print(buffer.toString());
     }
 
-    // 3. Checksum availability for each target
-    for (final entry in targets.entries) {
-      await _checkChecksumAvailability(
-        entry.key,
-        entry.value['asset']!,
-        entry.value['checksum']!,
+    // 3. gh authentication (pushing to hosting repos depends on it)
+    await _checkGhAuth(verbose, issues);
+
+    // 4. Remote release (authoritative version + asset digests)
+    ReleaseInfo? release;
+    if (issues.isEmpty) {
+      release = await _checkRemoteRelease(
+        config,
         verbose,
         issues,
         warnings,
       );
     }
 
-    // 4. Git tag (publish resolves the version from tags)
+    // 5. Checksum availability for each target
+    for (final entry in targets.entries) {
+      await _checkChecksumAvailability(
+        entry.key,
+        entry.value['asset']!,
+        entry.value['checksum']!,
+        release,
+        verbose,
+        issues,
+        warnings,
+      );
+    }
+
+    // 6. Git tag (version fallback; publish prefers the remote release)
     await _checkGitTag(verbose, warnings);
 
-    // 5. Output directory writability
+    // 7. Output directory writability
     await _checkOutputDirectory(verbose, issues);
 
     _displaySummary(issues, warnings);
+  }
+
+  Future<void> _checkGhAuth(bool verbose, List<String> issues) async {
+    final githubService = GitHubService();
+    if (await githubService.isAuthenticated()) {
+      final buffer = StringBuffer()..writeSuccess('GitHub CLI (gh)');
+      print(buffer.toString());
+      if (verbose) {
+        print('    gh is installed and authenticated');
+        print('    Used to read releases and push manifests to hosting repos');
+      }
+    } else {
+      final buffer = StringBuffer()..writeError('GitHub CLI (gh)');
+      print(buffer.toString());
+      print('    gh is not installed or not authenticated.');
+      print('    Fix: gh auth login');
+      issues.add('GitHub CLI not authenticated');
+    }
+  }
+
+  Future<ReleaseInfo?> _checkRemoteRelease(
+    TapsterConfig config,
+    bool verbose,
+    List<String> issues,
+    List<String> warnings,
+  ) async {
+    final repoString = parseRepoString(config.repository);
+    final release = await GitHubService()
+        .fetchLatestRelease(repoString.$1, repoString.$2);
+
+    if (release == null) {
+      final buffer = StringBuffer()
+        ..writeWarning('Remote release (${repoString.$1}/${repoString.$2})');
+      print(buffer.toString());
+      print('    No release found — checksums must come from config or '
+          'local assets.');
+      print('    The hosting repo CI should create the release first.');
+      warnings.add('No remote release found');
+    } else {
+      final buffer = StringBuffer()
+        ..writeSuccess(
+          'Remote release (${release.tagName}, '
+          '${release.assetDigests.length} asset(s) with digest)',
+        );
+      print(buffer.toString());
+      if (verbose) {
+        for (final entry in release.assetDigests.entries) {
+          print('    ${entry.key}: ${entry.value.substring(0, 16)}...');
+        }
+      }
+    }
+    return release;
   }
 
   Future<void> _checkChecksumAvailability(
     String target,
     String assetPath,
     String configuredChecksum,
+    ReleaseInfo? release,
     bool verbose,
     List<String> issues,
     List<String> warnings,
   ) async {
+    final assetName = assetPath.split('/').last;
+
+    // 1. Remote digest
+    final remoteDigest = release?.assetDigests[assetName];
+    if (remoteDigest != null) {
+      final buffer = StringBuffer()
+        ..writeSuccess('$target: checksum from remote release');
+      print(buffer.toString());
+      if (verbose) {
+        print('    ${remoteDigest.substring(0, 16)}...');
+      }
+      return;
+    }
+
+    // 2. Configured checksum
     if (configuredChecksum.isNotEmpty) {
       final buffer = StringBuffer()
         ..writeSuccess('$target: checksum configured');
@@ -137,6 +221,7 @@ class DoctorCommand extends Command {
       return;
     }
 
+    // 3. Local asset
     final assetFile = File(assetPath);
     if (await assetFile.exists()) {
       final buffer = StringBuffer()
@@ -150,12 +235,10 @@ class DoctorCommand extends Command {
 
     final buffer = StringBuffer()..writeError('$target: checksum unavailable');
     print(buffer.toString());
-    print(
-      '    Neither a configured checksum nor a local asset: $assetPath',
-    );
-    print(
-      '    Fix: add a checksum to .tapster.yaml, or build the asset first',
-    );
+    print('    No remote digest for $assetName, no configured checksum, '
+        'and no local asset at $assetPath.');
+    print('    Fix: publish a release first, or add a checksum to '
+        '.tapster.yaml');
     issues.add('$target has no checksum source');
   }
 
@@ -167,8 +250,8 @@ class DoctorCommand extends Command {
         ..writeWarning('Git repository');
       print(buffer.toString());
       print(
-        '    Not inside a git repository — publish cannot resolve the '
-        'version from tags',
+        '    Not inside a git repository — version will come from the '
+        'remote release only',
       );
       warnings.add('Not inside a git repository');
       return;
@@ -179,10 +262,8 @@ class DoctorCommand extends Command {
       final buffer = StringBuffer()
         ..writeWarning('Git tag');
       print(buffer.toString());
-      print(
-        '    No tag found on HEAD — publish requires a tag (or --version)',
-      );
-      print('    Fix: git tag v1.0.0 && git push origin v1.0.0');
+      print('    No tag found on HEAD — publish will use the remote release '
+          'tag (or --version)');
       warnings.add('No git tag found');
       return;
     }
@@ -201,10 +282,12 @@ class DoctorCommand extends Command {
       await probe.parent.create(recursive: true);
       await probe.writeAsString('test');
       await probe.delete();
-      final buffer = StringBuffer()..writeSuccess('Output directory ($outputDir)');
+      final buffer = StringBuffer()
+        ..writeSuccess('Output directory ($outputDir)');
       print(buffer.toString());
     } catch (e) {
-      final buffer = StringBuffer()..writeError('Output directory ($outputDir)');
+      final buffer = StringBuffer()
+        ..writeError('Output directory ($outputDir)');
       print(buffer.toString());
       print('    Cannot write to $outputDir: $e');
       issues.add('Output directory is not writable: $outputDir');
