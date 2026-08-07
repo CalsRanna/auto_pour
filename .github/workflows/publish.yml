@@ -44,3 +44,5 @@ jobs:
             --jq '.assets[0].digest')"
           echo "asset digest: $DIGEST"
           test -n "$DIGEST"
+        env:
+          GH_TOKEN: ${{ github.token }}
