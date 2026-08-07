@@ -28,6 +28,7 @@ jobs:
       - name: Build tapster
         run: |
           dart pub get
+          mkdir -p build
           dart compile exe bin/tapster.dart -o build/tapster
 
       # 2. 创建 GitHub Release 并上传 asset（只碰当前仓库）
