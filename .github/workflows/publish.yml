@@ -14,7 +14,8 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # Homebrew formula 分发给 macOS 用户，构建平台必须匹配目标平台
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
