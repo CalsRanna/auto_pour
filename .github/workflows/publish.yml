@@ -1,0 +1,59 @@
+# 发布流水线：tag 触发，构建 tapster → 生成分发产物 → 创建 Release → 推送 formula 到 tap
+#
+# 职责边界：CI 负责所有远程执行动作；tapster 只负责生成分发产物（本地零网络）。
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 需要 tag 历史（tapster 从 git tag 解析版本）
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      # 1. 构建 tapster 二进制（dogfooding：用 tapster 发布 tapster）
+      - name: Build tapster
+        run: |
+          dart pub get
+          dart compile exe bin/tapster.dart -o build/tapster
+
+      # 2. 生成分发产物（版本自动取自 git tag，输出到 dist/）
+      - name: Generate distribution artifacts
+        run: ./build/tapster publish -o dist
+
+      # 3. 创建 GitHub Release 并上传 asset
+      - name: Create GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" build/tapster --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # 4. 推送 formula 到 tap 仓库（Contents API）
+      #    需要 TAP_PAT：对 tap 仓库有写权限的 Personal Access Token
+      - name: Push formula to tap
+        run: |
+          FORMULA="$(base64 -w0 < dist/Formula/tapster.rb)"
+          gh api -X PUT repos/CalsRanna/homebrew-inspire/contents/Formula/tapster.rb \
+            -f message="release $GITHUB_REF_NAME" \
+            -f content="$FORMULA" \
+            -f branch=main
+        env:
+          GH_TOKEN: ${{ secrets.TAP_PAT }}
+
+      # 5. 校验：formula 中记录的 sha256 应与发布 asset 一致
+      - name: Verify checksum
+        run: |
+          PUBLISHED_SHA256="$(shasum -a 256 build/tapster | cut -d' ' -f1)"
+          FORMULA_SHA256="$(grep -o 'sha256 "[a-f0-9]\{64\}"' dist/Formula/tapster.rb | cut -d'"' -f2)"
+          test "$PUBLISHED_SHA256" = "$FORMULA_SHA256"
+          echo "checksum OK: $PUBLISHED_SHA256"
