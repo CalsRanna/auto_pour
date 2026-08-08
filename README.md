@@ -159,7 +159,7 @@ Release 建好后，在发布侧（本地）执行 `tapster publish`：
 tapster publish
 # 输出示例：
 #   Remote release: v2.0.0 (1 asset(s) with digest)
-#   ✓ Formula pushed to CalsRanna/homebrew-inspire
+#   ✓ Formula pushed to CalsRanna/homebrew-tap
 ```
 
 ### 跨平台发布
@@ -253,7 +253,7 @@ repository: https://github.com/username/my-app.git
 license: MIT
 
 scoop:
-  bucket: username/scoop-bucket
+  bucket: username/scoop-bucket # 一个 bucket 托管所有工具
   asset: build/windows/my-app.zip
   arch: 64bit
   checksum: a1b2c3d4e5f6...
@@ -303,7 +303,7 @@ scoop:
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `bucket` | String | ✅ | Scoop bucket 仓库（如 `owner/scoop-bucket`） |
+| `bucket` | String | ✅ | Scoop bucket 仓库（如 `owner/scoop-bucket`，仓库名即 bucket 名） |
 | `asset` | String | ✅ | App 归档文件路径（.zip） |
 | `arch` | String | ❌ | 架构（`64bit` / `32bit` / `arm64`，默认 `64bit`） |
 | `checksum` | String | ❌ | 预计算的 SHA256 校验和 |
@@ -351,9 +351,10 @@ tapster publish [选项]
 **checksum 解析优先级**：远端 Release asset digest（权威，与已发布 asset 一致）>
 配置预置 > 本地 asset 计算。
 
-**托管仓库解析**：`tap: owner/inspire` → 仓库 `owner/homebrew-inspire`（Homebrew
-命名规范，已带 `homebrew-` 前缀则不重复）；`bucket: owner/bucket` → 直接推送
-`owner/bucket`。
+**托管仓库解析**：`tap: owner/tap` → 仓库 `owner/homebrew-tap`（Homebrew
+命名规范，已带 `homebrew-` 前缀则不重复）；`bucket: owner/scoop-bucket` → 直接推送
+`owner/scoop-bucket`（仓库名即 bucket 名）。一个 tap/bucket 可托管多个工具，
+按工具名分发不同 manifest 即可。
 
 ### `upgrade` - 配置升级
 
@@ -510,7 +511,7 @@ gh auth status
 
 **5. 推送托管仓库失败**
 - 确认本地 gh 登录的账号对托管仓库（tap/bucket）有写权限
-- 确认 tap 命名正确：`owner/inspire` 对应仓库 `owner/homebrew-inspire`
+- 确认 tap 命名正确：`owner/tap` 对应仓库 `owner/homebrew-tap`
 
 ## 🤝 贡献
 

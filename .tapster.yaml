@@ -9,13 +9,16 @@ repository: https://github.com/CalsRanna/auto_pour.git
 license: MIT
 
 formula:
-  tap: CalsRanna/inspire
+  # brew tap CalsRanna/tap → 仓库 CalsRanna/homebrew-tap
+  # 一个 tap 托管所有工具（多工具分发），不绑定 tapster 本身
+  tap: CalsRanna/tap
   asset: build/tapster-macos
   # checksum 由远端 Release asset digest 权威解析（tapster publish 自动填充）
   dependencies:
     - gh
 
 scoop:
+  # scoop bucket add scoop-bucket <url> → 仓库 CalsRanna/scoop-bucket
   bucket: CalsRanna/scoop-bucket
   asset: build/tapster-windows.exe
   arch: 64bit
