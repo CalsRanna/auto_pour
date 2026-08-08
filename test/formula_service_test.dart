@@ -83,7 +83,46 @@ void main() {
           'v1.2.3/my-cli-macos"',
         ),
       );
-      expect(formula, contains('bin.install "my-cli-macos"'));
+    });
+
+    test('installs as the package name when the asset name differs', () async {
+      // 用户装完直接敲包名：asset 带平台后缀时重命名安装，
+      // 且 test 块用重命名后的命令名（否则 brew test 找不到命令）。
+      final config = sampleConfig(
+        formula: FormulaConfig(
+          tap: 'owner/homebrew-tools',
+          asset: 'build/my-cli-macos',
+          checksum: 'a' * 64,
+        ),
+      );
+
+      final formula = await FormulaService().generateFormula(
+        config,
+        config.formula!,
+        version: '1.2.3',
+      );
+
+      expect(
+        formula,
+        contains('bin.install "my-cli-macos" => "my-cli"'),
+      );
+      expect(
+        formula,
+        contains('system "#{bin}/my-cli", "--version"'),
+      );
+    });
+
+    test('keeps the asset name when it matches the package name', () async {
+      final config = sampleConfig();
+
+      final formula = await FormulaService().generateFormula(
+        config,
+        config.formula!,
+        version: '1.2.3',
+      );
+
+      expect(formula, contains('bin.install "my-cli"'));
+      expect(formula, contains('system "#{bin}/my-cli", "--version"'));
     });
 
     test('computes checksum from local asset when not configured', () async {

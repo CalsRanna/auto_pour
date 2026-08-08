@@ -15,11 +15,11 @@ class {{CLASS_NAME}} < Formula
   {{#if depends_on_brew}}{{#each depends_on_brew}}depends_on "{{this}}"{{/each}}{{/if}}
 
   def install
-    bin.install "{{EXECUTABLE_NAME}}"
+    {{INSTALL}}
   end
 
   test do
-    system "#{bin}/{{EXECUTABLE_NAME}}", "--version"
+    system {{TEST_CMD}}, "--version"
   end
 end
 ''';
@@ -47,7 +47,17 @@ end
       // 预置 checksum 时不读取本地 asset（跨平台发布时 asset 可能不在本地）
       context['SHA256'] = formulaConfig.checksum ??
           (await assetService.getAssetInfo(formulaConfig.asset)).checksum;
-      context['EXECUTABLE_NAME'] = _getExecutableName(formulaConfig.asset);
+      // 命令名 = 包名：asset 文件名带平台后缀（如 tapster-macos）时，
+      // 安装重命名为包名，用户直接敲包名；文件名与包名相同则不重命名
+      final executableName = _getExecutableName(formulaConfig.asset);
+      final installedName = config.name;
+      if (executableName == installedName) {
+        context['INSTALL'] = 'bin.install "$executableName"';
+        context['TEST_CMD'] = '"#{bin}/$executableName"';
+      } else {
+        context['INSTALL'] = 'bin.install "$executableName" => "$installedName"';
+        context['TEST_CMD'] = '"#{bin}/$installedName"';
+      }
     }
 
     // Handle dependencies
