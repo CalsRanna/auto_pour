@@ -84,6 +84,34 @@ void main() {
       expect(loaded.scoop!.shortcuts, ['MyApp']);
     });
 
+    test('round-trips a config without version', () async {
+      // 配置生成后无需再变：version 可选（版本来自远端 Release tag），
+      // 省略时保存/加载都正常，且 YAML 不写 version 行
+      final config = TapsterConfig(
+        name: 'my-cli',
+        description: 'A test CLI tool',
+        homepage: 'https://github.com/owner/my-cli',
+        repository: 'https://github.com/owner/my-cli.git',
+        license: 'MIT',
+        formula: FormulaConfig(
+          tap: 'owner/homebrew-tools',
+          asset: 'build/my-cli',
+        ),
+      );
+      expect(config.version, isNull);
+
+      final service = ConfigService();
+      await service.saveConfig(config, configPath);
+
+      final content = File(configPath).readAsStringSync();
+      expect(content.contains('version:'), isFalse);
+
+      final loaded = await service.loadConfig(configPath);
+      expect(loaded.version, isNull);
+      expect(loaded.name, 'my-cli');
+      expect(loaded.formula, isNotNull);
+    });
+
     test('migrates legacy flat format to nested formula', () async {
       final legacy = '''
 name: my-cli

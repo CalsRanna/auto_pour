@@ -25,10 +25,11 @@ class ConfigValidator {
       errors.add('Invalid package name: ${config.name}');
     }
 
-    if (config.version.trim().isEmpty) {
-      errors.add('Version is required');
-    } else if (!_isValidVersion(config.version)) {
-      errors.add('Invalid version format: ${config.version}');
+    // version 可选（版本来自远端 Release tag，配置生成后无需维护）；
+    // 提供时仅校验格式
+    final version = config.version;
+    if (version != null && version.trim().isNotEmpty && !_isValidVersion(version)) {
+      errors.add('Invalid version format: $version');
     }
 
     if (config.description.trim().isEmpty) {

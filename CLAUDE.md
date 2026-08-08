@@ -19,7 +19,7 @@ tapster（发布侧，本地，gh 已登录）：读远端 Release 信息 → �
 - tapster **做**：读远端状态（gh 已登录可读公开数据）、生成 manifest、推送托管仓库（本地凭据写用户自己的仓库）、`setup` 创建托管仓库（`gh repo create`，同样走本地凭据建用户自己的仓库，属于发布侧准备）
 - **gh 是运行依赖**：读取远端 Release（`gh api`）、推送托管仓库（Contents API）、创建托管仓库（`gh repo create`）都通过 gh
 
-项目包含五个主要命令：`init`（配置生成）、`setup`（创建托管仓库 tap/bucket）、`publish`（分发：读远端 → 生成 → 推送托管仓库）、`doctor`（分发就绪检查）、`upgrade`（配置升级）。
+项目包含四个主要命令：`init`（配置生成）、`setup`（创建托管仓库 tap/bucket）、`publish`（分发：读远端 → 生成 → 推送托管仓库）、`doctor`（分发就绪检查）。
 
 支持三种分发目标：
 - **Homebrew Formula** — 适用于 CLI 工具（macOS / Linux）
@@ -72,7 +72,6 @@ dart compile exe bin/tapster.dart -o tapster
 - `init_command.dart`: 交互式配置生成器（`-t` 指定 target，支持追加/覆盖，默认 homebrew/formula）
 - `publish_command.dart`: 分发命令（读远端 Release → 生成 manifest → 推送托管仓库；`--dry-run` 只生成、`--version` 覆盖、`-t` 选择目标、`-o` 输出目录）
 - `doctor_command.dart`: 分发就绪检查（配置有效性、gh 认证、远端 Release、checksum 可得性、输出目录）
-- `upgrade_command.dart`: 配置升级（更新 version + checksum，支持 `-t` 指定目标）
 
 #### 服务层 (lib/services/)
 - `config_service.dart`: 配置文件管理（YAML 读/写/验证，支持旧版扁平格式自动迁移）
@@ -103,7 +102,7 @@ dart compile exe bin/tapster.dart -o tapster
 1. **配置驱动**: 所有操作基于 `.tapster.yaml` 配置文件，支持嵌套 formula/cask/scoop 子配置
 2. **多目标分发**: 一个项目可同时配置 Formula、Cask、Scoop，产物输出到 `dist/` 并推送各托管仓库
 3. **跨平台支持**: 同一版本可在不同平台上分次分发（`-t` 过滤目标），Release 共享
-4. **版本来自远端 Release**: `publish` 默认读远端最新 Release tag 解析版本（`--version` 可覆盖，本地 git tag 作 fallback）
+4. **版本来自远端 Release**: `publish` 默认读远端最新 Release tag 解析版本（`--version` 可覆盖，本地 git tag 作 fallback）。配置**不含版本号**（`version` 可选），`.tapster.yaml` 生成后无需修改
 5. **权威 checksum**: 从远端 Release asset 读取 digest（sha256，`gh api` 的 `digest` 字段），跨环境构建也一致；配置预置/本地 asset 作 fallback
 6. **推送托管仓库**: 生成后自动写入（formula/cask → `owner/homebrew-{tap}`，scoop → bucket 仓库），用本地 gh 凭据；`--dry-run` 只生成
 7. **模板生成**: 自动生成 Homebrew formula/cask 和 Scoop manifest

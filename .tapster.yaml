@@ -1,8 +1,9 @@
 # Tapster Configuration File
 # This file defines how your package should be built and published
 
+# 配置生成后无需再修改：版本来自远端 Release tag（tapster publish 自动解析），
+# checksum 来自远端 asset digest。发版流程：改代码 → 打 tag → CI 构建 → tapster publish
 name: tapster
-version: 1.2.0
 description: A command-line tool for automating Homebrew/Scoop package publishing.
 homepage: https://github.com/CalsRanna/auto_pour
 repository: https://github.com/CalsRanna/auto_pour.git

@@ -48,9 +48,7 @@ class InitCommand extends Command {
       // Load existing config
       config = await configService.loadConfig(null);
       final buffer = StringBuffer()
-        ..writeSuccess(
-          'Existing configuration loaded (version: ${config.version})',
-        );
+        ..writeSuccess('Existing configuration loaded (${config.name})');
       print(buffer.toString());
     } else {
       // Fresh config — ask common fields
@@ -134,7 +132,7 @@ class InitCommand extends Command {
     final defaultOwner = githubUsername ?? 'user';
 
     final name = await _askString('Package name', 'my-package');
-    final version = await _askString('Version', '1.0.0');
+    // version 可选：版本由远端 Release tag 决定，配置生成后无需维护
     final description = await _askString('Description', 'A sample package');
     final repository = await _askString(
       'Repository URL',
@@ -148,7 +146,6 @@ class InitCommand extends Command {
 
     return TapsterConfig(
       name: name,
-      version: version,
       description: description,
       homepage: homepage,
       repository: repository,

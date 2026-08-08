@@ -50,7 +50,7 @@ class DoctorCommand extends Command {
       print(buffer.toString());
       if (verbose) {
         print('    name: ${config.name}');
-        print('    version: ${config.version}');
+        print('    version: ${config.version ?? '-'}');
       }
     } catch (e) {
       spinner.stop();

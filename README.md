@@ -20,13 +20,13 @@ tapster **不做**构建、不创建 Release、不上传 asset——这些是被
 - 📝 **配置驱动**: 通过 `.tapster.yaml` 配置文件管理项目信息和发布设置
 - 🎯 **多目标支持**: 同时支持 Homebrew Formula、Homebrew Cask、Scoop 三种分发目标
 - 🌐 **跨平台分发**: 同一版本可在 macOS/Windows/Linux 上分次生成产物，Release 共享、仓库独立
-- 🏷️ **版本来自远端 Release**: 发布版本自动从远端最新 Release tag 解析（`--version` 可覆盖）
+- 🏷️ **版本来自远端 Release**: 发布版本自动从远端最新 Release tag 解析（`--version` 可覆盖），配置**不含版本号**，生成后无需修改
 - 📦 **权威 checksum**: 自动从远端 Release asset 读取 digest（sha256），跨环境构建也一致
 - 🏗️ **模板生成**: 自动生成符合规范的 Formula/Cask Ruby 文件和 Scoop JSON manifest
 - 📤 **推送托管仓库**: 生成后自动写入托管仓库（Homebrew tap / Scoop bucket），用本地 gh 凭据
 - 🛡️ **配置验证**: 严格验证配置文件的完整性和正确性
 - 🎯 **交互式配置**: 通过向导式界面生成项目配置，支持追加/覆盖
-- 🔄 **配置升级**: `upgrade` 命令自动更新 version 和 checksum
+- 🛠️ **托管仓库自动创建**: `setup` 命令自动创建分发所需的 tap/bucket（幂等）
 - 🔍 **就绪检查**: `doctor` 命令检查配置、gh 认证、checksum 可得性、远端 Release
 
 ## 📋 系统要求
@@ -218,16 +218,16 @@ Tapster 使用 `.tapster.yaml` 配置文件管理项目信息，支持嵌套的 
 
 ```yaml
 name: my-cli
-version: 1.0.0
+# 无需 version：发布版本由远端 Release tag 自动解析
 description: A command-line tool
 homepage: https://github.com/username/my-cli
 repository: https://github.com/username/my-cli.git
 license: MIT
 
 formula:
-  tap: homebrew-tools
+  tap: username/tap          # → 仓库 username/homebrew-tap
   asset: build/my-cli
-  checksum: a1b2c3d4e5f6...
+  # checksum 由远端 asset digest 自动解析（可选 fallback，一般无需填写）
   dependencies:
     - openssl
 ```
@@ -236,24 +236,21 @@ formula:
 
 ```yaml
 name: my-app
-version: 1.0.0
 description: A macOS application
 homepage: https://github.com/username/my-app
 repository: https://github.com/username/my-app.git
 license: MIT
 
 cask:
-  tap: homebrew-cask
+  tap: username/tap          # → 仓库 username/homebrew-tap
   asset: build/macos/my-app.zip
   app_name: MyApp.app
-  checksum: a1b2c3d4e5f6...
 ```
 
 ### Scoop 配置（Windows GUI）
 
 ```yaml
 name: my-app
-version: 1.0.0
 description: A Windows application
 homepage: https://github.com/username/my-app
 repository: https://github.com/username/my-app.git
@@ -275,7 +272,7 @@ scoop:
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `name` | String | ✅ | 包名（只允许小写字母、数字和连字符） |
-| `version` | String | ✅ | 版本号（遵循语义化版本规范） |
+| `version` | String | ❌ | 可选；发布版本由远端 Release tag 自动解析，通常无需填写 |
 | `description` | String | ✅ | 包的描述信息 |
 | `homepage` | String | ✅ | 项目主页 URL |
 | `repository` | String | ✅ | Git 仓库地址 |
@@ -286,7 +283,7 @@ scoop:
 
 > 至少需要配置一个分发目标（formula / cask / scoop）
 >
-> `version` 是"期望版本"，实际发布版本以 git tag 为准（不一致时 publish 会警告）
+> `version` 可选且无需维护：配置生成后不再变化，版本始终来自远端 Release
 
 #### Formula 子字段
 
@@ -363,29 +360,6 @@ tapster publish [选项]
 `owner/scoop-bucket`（仓库名即 bucket 名）。一个 tap/bucket 可托管多个工具，
 按工具名分发不同 manifest 即可。
 
-### `upgrade` - 配置升级
-
-更新 `.tapster.yaml` 中的 version 和 asset checksum：
-
-```bash
-tapster upgrade [选项]
-```
-
-**选项：**
-- `-d, --dry-run`: 预览升级内容，不实际修改
-- `-c, --config`: 指定配置文件路径
-- `-t, --target`: 指定升级目标（`homebrew/formula` / `homebrew/cask` / `scoop`）
-
-**流程：**
-1. 加载配置，计算当前 asset 的 SHA256
-2. 对比已有 checksum，如有变化则提示
-3. 建议新版本号（patch +1）
-4. 确认后更新配置并保存
-
-> `upgrade` 用于维护配置中记录的 checksum（分发的 fallback 来源）。
-> 分发时版本以远端 Release 为准，upgrade 后记得让仓库 B 的 CI 打 tag 并创建
-> Release：`git tag v1.1.0 && git push origin v1.1.0`
-
 ### `doctor` - 分发就绪检查
 
 检查分发所需的前置条件：
@@ -412,12 +386,12 @@ tapster doctor [选项]
 lib/
 ├── commands/                  # 命令层
 │   ├── init_command.dart      # 交互式配置生成
+│   ├── setup_command.dart     # 创建托管仓库（tap/bucket，幂等）
 │   ├── publish_command.dart   # 分发：读远端 Release → 生成 → 推送托管仓库
-│   ├── doctor_command.dart    # 分发就绪检查
-│   └── upgrade_command.dart   # 配置升级
+│   └── doctor_command.dart    # 分发就绪检查
 ├── services/                  # 服务层
 │   ├── config_service.dart    # YAML 读/写/验证/迁移
-│   ├── github_service.dart    # gh 封装：远端 Release 读取 + Contents API 推送
+│   ├── github_service.dart    # gh 封装：远端 Release 读取 + Contents API 推送 + 仓库创建
 │   ├── formula_service.dart   # Formula 模板渲染
 │   ├── cask_service.dart      # Cask 模板渲染
 │   ├── scoop_service.dart     # Scoop manifest 生成
@@ -513,7 +487,7 @@ gh auth status
 ```
 
 **4. 远端 Release 没有 asset digest 时 checksum 不可得**
-- 在 `.tapster.yaml` 中预置 `checksum`（`tapster upgrade` 可计算）
+- 在 `.tapster.yaml` 中预置 `checksum`（fallback 来源）
 - 或本地有 asset 时 tapster 自动计算
 
 **5. 推送托管仓库失败**

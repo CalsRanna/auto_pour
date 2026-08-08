@@ -104,7 +104,9 @@ class ConfigService {
     buffer.writeln();
 
     buffer.writeln('name: ${config.name}');
-    buffer.writeln('version: ${config.version}');
+    if (config.version != null) {
+      buffer.writeln('version: ${config.version}');
+    }
     buffer.writeln('description: ${config.description}');
     buffer.writeln('homepage: ${config.homepage}');
     buffer.writeln('repository: ${config.repository}');

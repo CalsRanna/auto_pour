@@ -1,6 +1,6 @@
 class TapsterConfig {
   final String name;
-  final String version;
+  final String? version;
   final String description;
   final String homepage;
   final String repository;
@@ -11,7 +11,7 @@ class TapsterConfig {
 
   TapsterConfig({
     required this.name,
-    required this.version,
+    this.version,
     required this.description,
     required this.homepage,
     required this.repository,
@@ -24,7 +24,7 @@ class TapsterConfig {
   factory TapsterConfig.fromJson(Map<String, dynamic> json) {
     return TapsterConfig(
       name: json['name'] as String,
-      version: json['version'] as String,
+      version: json['version'] as String?,
       description: json['description'] as String,
       homepage: json['homepage'] as String,
       repository: json['repository'] as String,
@@ -44,7 +44,7 @@ class TapsterConfig {
   Map<String, dynamic> toJson() {
     return {
       'name': name,
-      'version': version,
+      if (version != null) 'version': version,
       'description': description,
       'homepage': homepage,
       'repository': repository,
@@ -84,7 +84,7 @@ class TapsterConfig {
 
   @override
   String toString() {
-    return 'TapsterConfig(name: $name, version: $version, '
+    return 'TapsterConfig(name: $name, version: ${version ?? '-'}, '
         'formula: ${formula != null}, cask: ${cask != null}, scoop: ${scoop != null})';
   }
 }

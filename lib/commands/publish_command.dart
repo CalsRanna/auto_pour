@@ -206,7 +206,8 @@ class PublishCommand extends Command {
   ) async {
     final explicit = argResults!['version'] as String?;
     if (explicit != null && explicit.isNotEmpty) {
-      if (explicit != config.version) {
+      // 配置 version 可选（版本来自远端 Release）；仅在配置显式提供时对比
+      if (config.version != null && explicit != config.version) {
         final buffer = StringBuffer()
           ..writeWarning(
             'Version $explicit differs from config version ${config.version}',
