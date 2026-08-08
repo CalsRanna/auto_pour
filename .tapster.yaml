@@ -10,7 +10,7 @@ license: MIT
 
 formula:
   tap: CalsRanna/inspire
-  asset: build/tapster
-  checksum: e1d7341f6fc44e3977add02b03162be1d168e8eba5eba137d4be6162bf2af75a
+  asset: build/tapster-macos
+  # checksum 由远端 Release asset digest 权威解析（tapster publish 自动填充）
   dependencies:
     - gh

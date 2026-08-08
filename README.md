@@ -164,30 +164,44 @@ tapster publish
 
 ### 跨平台发布
 
-macOS / Windows 的构建产物分别在不同平台上构建，Release 共享：
+Dart AOT 编译不支持交叉编译：每个平台在对应 runner 上构建，**asset 名带平台后缀**（tapster 按 asset 文件名匹配远端 digest，URL 与 checksum 才能对得上）：
 
 ```yaml
 jobs:
-  publish-macos:
-    runs-on: macos-latest
+  # 先建空 Release（各平台 job 并行 upload，必须先存在）
+  create-release:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - run: # ... 构建 macOS 产物 ...
-      - run: gh release create "v$GITHUB_REF_NAME" build/macos/*.zip --generate-notes || true
+      - run: gh release create "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
 
-  publish-windows:
-    runs-on: windows-latest
+  publish:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            asset: my-cli-macos
+          - os: ubuntu-latest
+            asset: my-cli-linux
+          - os: windows-latest
+            asset: my-cli-windows.exe
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - run: # ... 构建 Windows 产物 ...
-      - run: gh release upload "v$GITHUB_REF_NAME" build/windows/*.zip || true
+      - run: dart compile exe bin/main.dart -o build/${{ matrix.asset }}
+      - run: gh release upload "$GITHUB_REF_NAME" "build/${{ matrix.asset }}" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
 ```
 
-> `gh release create` 仅在首次触发时创建 Release；第二个平台用 `gh release upload` 追加 asset（`|| true` 容忍 asset 已存在）。
+> `gh release create` 先建空 Release；各平台 job 用 `gh release upload` 并行追加 asset（`--clobber` 容忍重跑）。注意 `GITHUB_REF_NAME` 已含 `v` 前缀，不要写成 `v$GITHUB_REF_NAME`。
 >
-> 之后在发布侧分平台执行 `tapster publish -t homebrew/cask` / `tapster publish -t scoop`，各自推送托管仓库。由于 checksum 来自远端 asset digest，跨平台构建也保持一致。
+> 之后在发布侧分平台执行 `tapster publish -t homebrew/formula`（macOS / Linux）或 `tapster publish -t scoop`（Windows），各自推送托管仓库。由于 checksum 来自远端 asset digest（按 asset 文件名匹配），跨平台构建也保持一致。
 
 ## ⚙️ 配置文件
 

@@ -13,9 +13,33 @@ permissions:
   contents: write
 
 jobs:
+  # 先建空 Release（三个平台的 build job 并行 upload，必须先存在）
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # Dart AOT 编译不支持交叉编译：每个平台在对应 runner 上构建，
+  # asset 名带平台后缀（tapster 按 asset 文件名匹配远端 digest）。
   publish:
-    # Homebrew formula 分发给 macOS 用户，构建平台必须匹配目标平台
-    runs-on: macos-latest
+    name: Build ${{ matrix.asset }}
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            asset: tapster-macos
+          - os: ubuntu-latest
+            asset: tapster-linux
+          - os: windows-latest
+            asset: tapster-windows.exe
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,20 +54,27 @@ jobs:
         run: |
           dart pub get
           mkdir -p build
-          dart compile exe bin/tapster.dart -o build/tapster
+          dart compile exe bin/tapster.dart -o build/${{ matrix.asset }}
 
-      # 2. 创建 GitHub Release 并上传 asset（只碰当前仓库）
-      - name: Create GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" build/tapster --generate-notes
+      # 2. 上传 asset（--clobber 容忍重跑；只碰当前仓库）
+      - name: Upload asset
+        run: gh release upload "$GITHUB_REF_NAME" "build/${{ matrix.asset }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # 3. 校验：Release asset 的 digest 应可被 tapster 读取（分发前置）
-      - name: Verify release digest available
+  # 3. 校验：三个平台的 asset 都在、digest 都可被 tapster 读取（分发前置）
+  verify:
+    name: Verify release assets
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all platform assets have digests
         run: |
-          DIGEST="$(gh api "repos/CalsRanna/auto_pour/releases/tags/$GITHUB_REF_NAME" \
-            --jq '.assets[0].digest')"
-          echo "asset digest: $DIGEST"
-          test -n "$DIGEST"
+          ASSETS="$(gh api "repos/CalsRanna/auto_pour/releases/tags/$GITHUB_REF_NAME" \
+            --jq '[.assets[] | {name: .name, digest: .digest}]')"
+          echo "$ASSETS"
+          NAMES="$(echo "$ASSETS" | jq -r '[.[].name] | sort | join(" ")')"
+          test "$NAMES" = "tapster-linux tapster-macos tapster-windows.exe"
+          test "$(echo "$ASSETS" | jq '[.[] | select(.digest == null)] | length')" -eq 0
         env:
           GH_TOKEN: ${{ github.token }}
