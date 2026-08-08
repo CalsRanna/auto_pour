@@ -26,7 +26,7 @@ tapster **不做**构建、不创建 Release、不上传 asset——这些是被
 - 📤 **推送托管仓库**: 生成后自动写入托管仓库（Homebrew tap / Scoop bucket），用本地 gh 凭据
 - 🛡️ **配置验证**: 严格验证配置文件的完整性和正确性
 - 🎯 **交互式配置**: 通过向导式界面生成项目配置，支持追加/覆盖
-- 🛠️ **托管仓库自动创建**: `setup` 命令自动创建分发所需的 tap/bucket（幂等）
+- 🛠️ **托管仓库自动创建**: `init` 保存配置后自动创建分发所需的 tap/bucket（幂等，`--private` / `--yes` 控制）
 - 🔍 **就绪检查**: `doctor` 命令检查配置、gh 认证、checksum 可得性、远端 Release
 
 ## 📋 系统要求
@@ -108,21 +108,20 @@ dist/
 ## 🔄 典型工作流
 
 ```bash
-# 1. 初始化配置（一次性，tap/bucket 默认标准命名，直接 Enter 即可）
+# 1. 初始化配置 + 创建托管仓库（一次性；仓库已存在自动跳过，幂等）
 tapster init -t homebrew/formula -t scoop
-
-# 2. 创建托管仓库（一次性；已存在的仓库自动跳过，幂等）
-tapster setup
+#   …问答结束保存配置后，提示创建托管仓库 (Y/n)…
+#   ✓ Configuration saved to .tapster.yaml
 #   ✓ Repository created: CalsRanna/homebrew-tap
 #   ✓ Repository created: CalsRanna/scoop-bucket
-#   自定义仓库名：init 时手动输入，或 setup -t <target> 只处理部分目标；
-#   --dry-run 预览、--private 私有（注意私有 bucket 无法被 scoop 安装）
+#   自定义仓库名：init 时手动输入；--private 私有、--yes 跳过确认
+#   （注意私有 bucket 无法被 scoop 安装）
 
-# 3. 构建并打 tag（被发布仓库自己的 CI 会构建并创建 Release）
+# 2. 构建并打 tag（被发布仓库自己的 CI 会构建并创建 Release）
 git tag v2.0.0 && git push origin v2.0.0
 #   → 仓库 B 的 CI：构建 → 创建 Release v2.0.0 → 上传 asset
 
-# 4. 分发（等 Release 建好后，发布侧执行）
+# 3. 分发（等 Release 建好后，发布侧执行）
 tapster publish
 #   → 读远端 Release v2.0.0 + asset digest
 #   → 生成 manifest（checksum 与已发布 asset 一致）
@@ -315,9 +314,9 @@ scoop:
 
 ## 🛠️ 命令详解
 
-### `init` - 初始化配置
+### `init` - 初始化配置 + 创建托管仓库
 
-创建或更新 `.tapster.yaml` 配置文件。默认配置 `formula` 目标，通过 `-t` 指定其他目标：
+创建或更新 `.tapster.yaml` 配置文件（版本由远端 Release 解析，配置生成后无需修改）。保存配置后引导创建分发所需的托管仓库（tap/bucket），已存在的自动跳过：
 
 ```bash
 tapster init [选项]
@@ -326,6 +325,8 @@ tapster init [选项]
 **选项：**
 - `-f, --force`: 强制覆盖已配置的目标
 - `-t, --target`: 分发目标（`homebrew/formula` / `homebrew/cask` / `scoop`），默认 `formula`，可多次使用
+- `--private`: 创建私有托管仓库（注意私有 bucket 无法被 scoop 安装）
+- `-y, --yes`: 跳过仓库创建确认
 
 ### `publish` - 分发
 
@@ -385,8 +386,7 @@ tapster doctor [选项]
 ```
 lib/
 ├── commands/                  # 命令层
-│   ├── init_command.dart      # 交互式配置生成
-│   ├── setup_command.dart     # 创建托管仓库（tap/bucket，幂等）
+│   ├── init_command.dart      # 交互式配置生成 + 创建托管仓库（幂等）
 │   ├── publish_command.dart   # 分发：读远端 Release → 生成 → 推送托管仓库
 │   └── doctor_command.dart    # 分发就绪检查
 ├── services/                  # 服务层

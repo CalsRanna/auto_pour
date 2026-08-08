@@ -3,7 +3,6 @@ import 'package:args/command_runner.dart';
 import 'package:tapster/commands/publish_command.dart';
 import 'package:tapster/commands/init_command.dart';
 import 'package:tapster/commands/doctor_command.dart';
-import 'package:tapster/commands/setup_command.dart';
 import 'package:tapster/utils/string_buffer_extensions.dart';
 
 void main(List<String> arguments) async {
@@ -11,8 +10,7 @@ void main(List<String> arguments) async {
       CommandRunner('tapster', 'Homebrew Package Publishing Automation Tool')
         ..addCommand(PublishCommand())
         ..addCommand(InitCommand())
-        ..addCommand(DoctorCommand())
-        ..addCommand(SetupCommand());
+        ..addCommand(DoctorCommand());
 
   try {
     await runner.run(arguments);

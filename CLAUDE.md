@@ -16,10 +16,10 @@ tapster（发布侧，本地，gh 已登录）：读远端 Release 信息 → �
 ```
 
 - tapster **不做**：构建、创建 Release、上传 asset（这些是被发布仓库自己的 CI 的职责）
-- tapster **做**：读远端状态（gh 已登录可读公开数据）、生成 manifest、推送托管仓库（本地凭据写用户自己的仓库）、`setup` 创建托管仓库（`gh repo create`，同样走本地凭据建用户自己的仓库，属于发布侧准备）
+- tapster **做**：读远端状态（gh 已登录可读公开数据）、生成 manifest、推送托管仓库（本地凭据写用户自己的仓库）、`init` 时创建托管仓库（`gh repo create`，同样走本地凭据建用户自己的仓库，属于发布侧准备）
 - **gh 是运行依赖**：读取远端 Release（`gh api`）、推送托管仓库（Contents API）、创建托管仓库（`gh repo create`）都通过 gh
 
-项目包含四个主要命令：`init`（配置生成）、`setup`（创建托管仓库 tap/bucket）、`publish`（分发：读远端 → 生成 → 推送托管仓库）、`doctor`（分发就绪检查）。
+项目包含三个主要命令：`init`（配置生成 + 引导创建托管仓库 tap/bucket）、`publish`（分发：读远端 → 生成 → 推送托管仓库）、`doctor`（分发就绪检查）。
 
 支持三种分发目标：
 - **Homebrew Formula** — 适用于 CLI 工具（macOS / Linux）

@@ -4,6 +4,7 @@ import 'package:args/command_runner.dart';
 import 'package:crypto/crypto.dart';
 import 'package:tapster/models/tapster_config.dart';
 import 'package:tapster/services/config_service.dart';
+import 'package:tapster/services/github_service.dart';
 import 'package:tapster/utils/repo_utils.dart';
 import 'package:tapster/utils/string_buffer_extensions.dart';
 
@@ -28,6 +29,17 @@ class InitCommand extends Command {
           'Distribution target(s) to configure: homebrew/formula, homebrew/cask, scoop',
       allowed: ['homebrew/formula', 'homebrew/cask', 'scoop'],
       defaultsTo: ['homebrew/formula'],
+    );
+    argParser.addFlag(
+      'private',
+      help: 'Create hosting repositories as private (default: public)',
+      negatable: false,
+    );
+    argParser.addFlag(
+      'yes',
+      abbr: 'y',
+      help: 'Skip the repository creation confirmation',
+      negatable: false,
     );
   }
 
@@ -62,6 +74,7 @@ class InitCommand extends Command {
 
     // Process each target
     var changed = false;
+    final configuredTargets = <String>[];
     for (final target in targets) {
       final alreadyConfigured = _isTargetConfigured(config, target);
 
@@ -82,6 +95,7 @@ class InitCommand extends Command {
 
       config = await _configureTarget(config, target, githubUsername);
       changed = true;
+      configuredTargets.add(target);
     }
 
     if (!changed) {
@@ -95,6 +109,114 @@ class InitCommand extends Command {
     final buffer = StringBuffer()
       ..writeSuccess('Configuration saved to .tapster.yaml');
     print(buffer.toString());
+
+    // 引导步骤：为本次新配置的目标创建托管仓库（tap/bucket），幂等
+    if (configuredTargets.isNotEmpty) {
+      await _createHostingRepos(config, configuredTargets);
+    }
+  }
+
+  // ── Hosting repositories ────────────────────────────────────────
+
+  /// 为本次新配置的目标创建托管仓库（Homebrew tap / Scoop bucket）。
+  ///
+  /// 创建公开仓库是外向操作：默认交互确认（默认 yes），--yes 跳过、
+  /// --private 建私有仓库（对 scoop 警告）。已存在的仓库自动跳过。
+  /// 配置已保存，创建失败不致命——提示重跑 init（幂等）或手动创建。
+  Future<void> _createHostingRepos(
+    TapsterConfig config,
+    List<String> targets,
+  ) async {
+    final isPrivate = argResults!['private'] as bool;
+    final skipConfirm = argResults!['yes'] as bool;
+
+    final repos = <(String, String, String)>[];
+    for (final target in targets) {
+      final resolved = _resolveHostingRepo(config, target);
+      if (resolved != null) repos.add((target, resolved.$1, resolved.$2));
+    }
+    if (repos.isEmpty) return;
+
+    if (isPrivate) {
+      final warn = StringBuffer()
+        ..writeWarning('Private repositories requested');
+      print(warn.toString());
+      print('    Note: Scoop buckets must be public to be installable.');
+    }
+
+    print('');
+    final bullet = StringBuffer()
+      ..writeBullet('Hosting repositories');
+    print(bullet.toString());
+
+    final githubService = GitHubService();
+    var failures = 0;
+    for (final (target, owner, repo) in repos) {
+      final fullName = '$owner/$repo';
+      final exists = await githubService.repositoryExists(owner, repo);
+
+      if (exists) {
+        final buffer = StringBuffer()
+          ..writeSuccess('Repository exists ($target): $fullName');
+        print(buffer.toString());
+        continue;
+      }
+
+      if (!skipConfirm) {
+        stdout.write('Create repository $fullName ($target)? (Y/n): ');
+        final input = stdin.readLineSync()?.trim().toLowerCase() ?? 'y';
+        if (input == 'n' || input == 'no') {
+          final buffer = StringBuffer()
+            ..writeWarning('Skipped: $fullName');
+          print(buffer.toString());
+          continue;
+        }
+      }
+
+      try {
+        await githubService.createRepository(owner, repo, public: !isPrivate);
+        final buffer = StringBuffer()
+          ..writeSuccess('Repository created ($target): $fullName');
+        print(buffer.toString());
+      } catch (e) {
+        final buffer = StringBuffer()
+          ..writeError('Failed to create ($target): $fullName');
+        print(buffer.toString());
+        print('    $e');
+        failures++;
+      }
+    }
+
+    if (failures > 0) {
+      print('');
+      final warn = StringBuffer()
+        ..writeWarning('Some repositories could not be created');
+      print(warn.toString());
+      print('    The configuration is saved. Rerun "tapster init -t <target>"');
+      print('    (idempotent) or create the repositories on GitHub.');
+      exit(1);
+    }
+  }
+
+  /// 目标 → 托管仓库 (owner, repo)；未知目标返回 null。
+  (String, String)? _resolveHostingRepo(TapsterConfig config, String target) {
+    switch (target) {
+      case 'homebrew/formula':
+        return resolveTapRepo(config.formula!.tap);
+      case 'homebrew/cask':
+        return resolveTapRepo(config.cask!.tap);
+      case 'scoop':
+        final parts = config.scoop!.bucket.split('/');
+        if (parts.length != 2) {
+          throw Exception(
+            'Invalid scoop bucket: ${config.scoop!.bucket} '
+            '(expected owner/bucket)',
+          );
+        }
+        return (parts[0], parts[1]);
+      default:
+        return null;
+    }
   }
 
   // ── Cask ───────────────────────────────────────────────────────
@@ -340,7 +462,7 @@ class InitCommand extends Command {
         ..writeWarning('Asset file not found at $filePath');
       print(buffer.toString());
       print(
-        '    Checksum will be left empty — run "tapster upgrade" later to fill it',
+        '    Checksum will be resolved from the remote release digest on publish',
       );
       return null;
     }
