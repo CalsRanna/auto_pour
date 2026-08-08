@@ -89,6 +89,7 @@ void main() {
 
     test('emits shortcuts when configured', () async {
       final config = sampleConfig(
+        name: 'my-app',
         scoop: ScoopConfig(
           bucket: 'owner/scoop-bucket',
           asset: 'build/windows/my-app.zip',
@@ -106,6 +107,54 @@ void main() {
 
       expect(manifest['shortcuts'], [
         ['my-app.exe', 'MyApp'],
+      ]);
+    });
+
+    test('renames bin to the package name when the asset name differs', () async {
+      // 多平台发布：asset 名带平台后缀（my-app-windows.zip），
+      // 用户应直接敲包名（my-cli），Scoop 数组语法重命名安装
+      final config = sampleConfig(
+        scoop: ScoopConfig(
+          bucket: 'owner/scoop-bucket',
+          asset: 'build/windows/my-app-windows.zip',
+          checksum: 'c' * 64,
+        ),
+      );
+
+      final manifestJson = await ScoopService().generateScoopManifest(
+        config,
+        config.scoop!,
+        version: '1.2.3',
+      );
+      final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
+
+      expect(manifest['bin'], [
+        ['my-app-windows.exe', 'my-cli'],
+      ]);
+    });
+
+    test('renames shortcut targets when bin is renamed', () async {
+      final config = sampleConfig(
+        scoop: ScoopConfig(
+          bucket: 'owner/scoop-bucket',
+          asset: 'build/windows/my-app-windows.zip',
+          checksum: 'c' * 64,
+          shortcuts: ['MyApp'],
+        ),
+      );
+
+      final manifestJson = await ScoopService().generateScoopManifest(
+        config,
+        config.scoop!,
+        version: '1.2.3',
+      );
+      final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
+
+      expect(manifest['bin'], [
+        ['my-app-windows.exe', 'my-cli'],
+      ]);
+      expect(manifest['shortcuts'], [
+        ['my-cli.exe', 'MyApp'],
       ]);
     });
   });

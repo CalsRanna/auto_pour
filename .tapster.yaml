@@ -2,7 +2,7 @@
 # This file defines how your package should be built and published
 
 name: tapster
-version: 1.1.0
+version: 1.1.2
 description: A command-line tool for automating Homebrew/Scoop package publishing.
 homepage: https://github.com/CalsRanna/auto_pour
 repository: https://github.com/CalsRanna/auto_pour.git
@@ -14,3 +14,9 @@ formula:
   # checksum 由远端 Release asset digest 权威解析（tapster publish 自动填充）
   dependencies:
     - gh
+
+scoop:
+  bucket: CalsRanna/scoop-bucket
+  asset: build/tapster-windows.exe
+  arch: 64bit
+  # checksum 由远端 Release asset digest 权威解析（tapster publish 自动填充）

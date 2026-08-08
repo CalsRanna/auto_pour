@@ -20,6 +20,14 @@ class ScoopService {
 
     final url = _buildDownloadUrl(config, version, scoopConfig.asset);
 
+    // 用户命令名 = 包名：asset 文件名带平台后缀（tapster-windows.exe）时，
+    // 用 Scoop 数组语法重命名安装，用户直接敲包名；同名则保持简单字符串
+    final binName = _extractBinaryName(scoopConfig.asset);
+    final baseName = binName.endsWith('.exe')
+        ? binName.substring(0, binName.length - 4)
+        : binName;
+    final renamesToPackageName = baseName != config.name;
+
     final manifest = <String, dynamic>{
       'version': version,
       'description': config.description,
@@ -27,7 +35,7 @@ class ScoopService {
       'license': config.license,
       'url': url,
       'hash': 'sha256:$sha256',
-      'bin': _extractBinaryName(scoopConfig.asset),
+      'bin': renamesToPackageName ? [[binName, config.name]] : binName,
       'checkver': {
         'github': config.repository.replaceAll('.git', ''),
       },
@@ -40,8 +48,10 @@ class ScoopService {
     };
 
     if (scoopConfig.shortcuts.isNotEmpty) {
+      // shortcuts 引用 bin 里的可执行文件名，重命名后必须指向新命令名
+      final shortcutTarget = renamesToPackageName ? '${config.name}.exe' : binName;
       manifest['shortcuts'] = scoopConfig.shortcuts
-          .map((s) => [_extractBinaryName(scoopConfig.asset), s])
+          .map((s) => [shortcutTarget, s])
           .toList();
     }
 
