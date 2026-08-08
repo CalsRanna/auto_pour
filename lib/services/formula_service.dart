@@ -43,7 +43,7 @@ end
 
     // Handle asset
     if (formulaConfig.asset.isNotEmpty) {
-      context['URL'] = _getDefaultUrl(config, version);
+      context['URL'] = _getDefaultUrl(config, version, formulaConfig.asset);
       // 预置 checksum 时不读取本地 asset（跨平台发布时 asset 可能不在本地）
       context['SHA256'] = formulaConfig.checksum ??
           (await assetService.getAssetInfo(formulaConfig.asset)).checksum;
@@ -150,9 +150,11 @@ end
     return path.split(Platform.pathSeparator).last;
   }
 
-  String _getDefaultUrl(TapsterConfig config, String version) {
-    // Generate GitHub release URL
+  String _getDefaultUrl(TapsterConfig config, String version, String assetPath) {
+    // Generate GitHub release URL（asset 文件名，与 cask/scoop 一致；
+    // checksum 解析同样按 asset 文件名匹配远端 digest）
     final repo = config.repository.replaceAll('.git', '');
-    return '$repo/releases/download/v$version/${config.name}';
+    final assetFileName = assetPath.split('/').last;
+    return '$repo/releases/download/v$version/$assetFileName';
   }
 }

@@ -58,6 +58,34 @@ void main() {
       );
     });
 
+    test('uses the asset file name in the download URL when it differs '
+        'from the package name', () async {
+      // 多平台发布：asset 名带平台后缀（tapster-macos），URL 必须指向它，
+      // 与 cask/scoop 一致，也才能匹配远端 digest 解析。
+      final config = sampleConfig(
+        formula: FormulaConfig(
+          tap: 'owner/homebrew-tools',
+          asset: 'build/my-cli-macos',
+          checksum: 'a' * 64,
+        ),
+      );
+
+      final formula = await FormulaService().generateFormula(
+        config,
+        config.formula!,
+        version: '1.2.3',
+      );
+
+      expect(
+        formula,
+        contains(
+          'url "https://github.com/owner/my-cli/releases/download/'
+          'v1.2.3/my-cli-macos"',
+        ),
+      );
+      expect(formula, contains('bin.install "my-cli-macos"'));
+    });
+
     test('computes checksum from local asset when not configured', () async {
       final tempDir = await Directory.systemTemp.createTemp('tapster_test');
       addTearDown(() => tempDir.delete(recursive: true));
