@@ -26,9 +26,10 @@ class InitCommand extends Command {
       'target',
       abbr: 't',
       help:
-          'Distribution target(s) to configure: homebrew/formula, homebrew/cask, scoop',
+          'Distribution target(s) to configure: homebrew/formula, homebrew/cask, scoop '
+          '(defaults to homebrew/formula + scoop — the CLI tool shape)',
       allowed: ['homebrew/formula', 'homebrew/cask', 'scoop'],
-      defaultsTo: ['homebrew/formula'],
+      defaultsTo: ['homebrew/formula', 'scoop'],
     );
     argParser.addFlag(
       'private',

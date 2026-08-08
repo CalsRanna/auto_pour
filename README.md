@@ -57,16 +57,13 @@ dart compile exe bin/tapster.dart -o tapster
 ### 2. 创建配置文件
 
 ```bash
-# 首次创建（默认 homebrew/formula 目标）
+# 首次创建（默认 homebrew/formula + scoop —— CLI 工具形态，建 tap + bucket）
 tapster init
 
-# 追加 cask 配置到已有项目
-tapster init -t homebrew/cask
+# CLI 工具只需 formula（macOS/Linux）
+tapster init -t homebrew/formula
 
-# 追加 scoop 配置
-tapster init -t scoop
-
-# 一次性配置多个目标
+# GUI 应用形态：cask + scoop（cask 进同一个 tap 的 Casks/ 目录）
 tapster init -t homebrew/cask -t scoop
 ```
 
@@ -324,7 +321,7 @@ tapster init [选项]
 
 **选项：**
 - `-f, --force`: 强制覆盖已配置的目标
-- `-t, --target`: 分发目标（`homebrew/formula` / `homebrew/cask` / `scoop`），默认 `formula`，可多次使用
+- `-t, --target`: 分发目标（`homebrew/formula` / `homebrew/cask` / `scoop`），默认 `homebrew/formula + scoop`（CLI 工具形态），可多次使用
 - `--private`: 创建私有托管仓库（注意私有 bucket 无法被 scoop 安装）
 - `-y, --yes`: 跳过仓库创建确认
 
@@ -438,7 +435,7 @@ dart compile exe bin/tapster.dart -o tapster
 
 ```bash
 mkdir my-cli && cd my-cli
-# 默认 homebrew/formula
+# 默认 homebrew/formula + scoop（CLI 形态；只要 formula 用 -t homebrew/formula）
 tapster init
 # ... 构建二进制 ...
 
