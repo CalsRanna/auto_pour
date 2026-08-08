@@ -2,7 +2,7 @@
 # This file defines how your package should be built and published
 
 name: tapster
-version: 1.1.2
+version: 1.2.0
 description: A command-line tool for automating Homebrew/Scoop package publishing.
 homepage: https://github.com/CalsRanna/auto_pour
 repository: https://github.com/CalsRanna/auto_pour.git
