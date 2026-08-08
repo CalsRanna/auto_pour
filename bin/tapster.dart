@@ -4,6 +4,7 @@ import 'package:tapster/commands/publish_command.dart';
 import 'package:tapster/commands/init_command.dart';
 import 'package:tapster/commands/doctor_command.dart';
 import 'package:tapster/commands/upgrade_command.dart';
+import 'package:tapster/commands/setup_command.dart';
 import 'package:tapster/utils/string_buffer_extensions.dart';
 
 void main(List<String> arguments) async {
@@ -12,7 +13,8 @@ void main(List<String> arguments) async {
         ..addCommand(PublishCommand())
         ..addCommand(InitCommand())
         ..addCommand(DoctorCommand())
-        ..addCommand(UpgradeCommand());
+        ..addCommand(UpgradeCommand())
+        ..addCommand(SetupCommand());
 
   try {
     await runner.run(arguments);

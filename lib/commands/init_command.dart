@@ -4,6 +4,7 @@ import 'package:args/command_runner.dart';
 import 'package:crypto/crypto.dart';
 import 'package:tapster/models/tapster_config.dart';
 import 'package:tapster/services/config_service.dart';
+import 'package:tapster/utils/repo_utils.dart';
 import 'package:tapster/utils/string_buffer_extensions.dart';
 
 class InitCommand extends Command {
@@ -165,7 +166,8 @@ class InitCommand extends Command {
 
     print('');
     print('── Formula configuration ──');
-    final tap = await _askString('Tap name', '$defaultOwner/homebrew-tools');
+    // 默认标准命名（一个 tap 托管所有工具），setup 命令负责创建仓库
+    final tap = await _askString('Tap name', defaultTapName(defaultOwner));
     final asset = await _askString('Binary file path', 'build/${config.name}');
     final depsInput = await _askString(
       'Dependencies (comma-separated, leave empty if none)',
@@ -198,9 +200,10 @@ class InitCommand extends Command {
 
     print('');
     print('── Scoop configuration ──');
+    // 默认标准命名（仓库名即 bucket 名），setup 命令负责创建仓库
     final bucket = await _askString(
       'Scoop bucket',
-      '$defaultOwner/scoop-bucket',
+      defaultBucketName(defaultOwner),
     );
     final asset = await _askString(
       'App archive path (.zip)',

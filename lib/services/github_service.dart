@@ -108,6 +108,41 @@ class GitHubService {
     }
   }
 
+  /// 仓库是否存在（`gh api repos/{owner}/{repo}`，404 → false）。
+  ///
+  /// 供 setup 命令幂等判断：已存在的 tap/bucket 跳过创建。
+  Future<bool> repositoryExists(String owner, String repo) async {
+    try {
+      final result = await _runGh(['api', 'repos/$owner/$repo']);
+      return result.exitCode == 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// 创建仓库（`gh repo create {owner}/{repo} --public|--private`）。
+  ///
+  /// 用于 setup：创建托管仓库（tap/bucket）。创建的是用户自己的仓库，
+  /// 与 pushFile 同属发布侧准备；public 默认 true——Scoop bucket
+  /// 必须公开才能被 scoop 安装。
+  Future<void> createRepository(
+    String owner,
+    String repo, {
+    bool public = true,
+  }) async {
+    final result = await _runGh([
+      'repo',
+      'create',
+      '$owner/$repo',
+      public ? '--public' : '--private',
+    ]);
+    if (result.exitCode != 0) {
+      throw GitHubException(
+        'Failed to create repository $owner/$repo: ${result.stderr}',
+      );
+    }
+  }
+
   /// 去掉 digest 的算法前缀：`sha256:hex` → `hex`。
   static String stripDigestPrefix(String digest) {
     final colonIndex = digest.indexOf(':');

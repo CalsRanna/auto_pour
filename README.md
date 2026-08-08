@@ -108,14 +108,21 @@ dist/
 ## 🔄 典型工作流
 
 ```bash
-# 1. 初始化配置（一次性）
-tapster init -t homebrew/cask -t scoop
+# 1. 初始化配置（一次性，tap/bucket 默认标准命名，直接 Enter 即可）
+tapster init -t homebrew/formula -t scoop
 
-# 2. 构建并打 tag（被发布仓库自己的 CI 会构建并创建 Release）
+# 2. 创建托管仓库（一次性；已存在的仓库自动跳过，幂等）
+tapster setup
+#   ✓ Repository created: CalsRanna/homebrew-tap
+#   ✓ Repository created: CalsRanna/scoop-bucket
+#   自定义仓库名：init 时手动输入，或 setup -t <target> 只处理部分目标；
+#   --dry-run 预览、--private 私有（注意私有 bucket 无法被 scoop 安装）
+
+# 3. 构建并打 tag（被发布仓库自己的 CI 会构建并创建 Release）
 git tag v2.0.0 && git push origin v2.0.0
 #   → 仓库 B 的 CI：构建 → 创建 Release v2.0.0 → 上传 asset
 
-# 3. 分发（等 Release 建好后，发布侧执行）
+# 4. 分发（等 Release 建好后，发布侧执行）
 tapster publish
 #   → 读远端 Release v2.0.0 + asset digest
 #   → 生成 manifest（checksum 与已发布 asset 一致）

@@ -54,4 +54,21 @@ void main() {
       );
     });
   });
+
+  group('defaultTapName', () {
+    test('returns owner/tap for the shared tap', () {
+      expect(defaultTapName('CalsRanna'), 'CalsRanna/tap');
+    });
+
+    test('resolves to the homebrew- prefixed repository', () {
+      final tap = defaultTapName('CalsRanna');
+      expect(resolveTapRepo(tap), ('CalsRanna', 'homebrew-tap'));
+    });
+  });
+
+  group('defaultBucketName', () {
+    test('returns owner/scoop-bucket', () {
+      expect(defaultBucketName('CalsRanna'), 'CalsRanna/scoop-bucket');
+    });
+  });
 }

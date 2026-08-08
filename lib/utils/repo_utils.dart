@@ -34,3 +34,11 @@
       : 'homebrew-${parts[1]}';
   return (owner, name);
 }
+
+/// 默认 tap 名：`{owner}/tap`（→ 仓库 `{owner}/homebrew-tap`，见 [resolveTapRepo]）。
+///
+/// 一个 tap 托管所有工具（多工具分发），不绑定单个工具名。
+String defaultTapName(String owner) => '$owner/tap';
+
+/// 默认 bucket 名：`{owner}/scoop-bucket`（仓库名即 bucket 名）。
+String defaultBucketName(String owner) => '$owner/scoop-bucket';
