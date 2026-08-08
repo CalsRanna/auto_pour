@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Create GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "${{ github.ref_name }}" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -57,8 +57,10 @@ jobs:
           dart compile exe bin/tapster.dart -o build/${{ matrix.asset }}
 
       # 2. 上传 asset（--clobber 容忍重跑；只碰当前仓库）
+      #    ${{ github.ref_name }} 而非 $GITHUB_REF_NAME：Windows 默认 shell 是
+      #    PowerShell，后者会被展开成空字符串（PowerShell 变量 ≠ 环境变量）
       - name: Upload asset
-        run: gh release upload "$GITHUB_REF_NAME" "build/${{ matrix.asset }}" --clobber
+        run: gh release upload "${{ github.ref_name }}" "build/${{ matrix.asset }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -70,7 +72,7 @@ jobs:
     steps:
       - name: Verify all platform assets have digests
         run: |
-          ASSETS="$(gh api "repos/CalsRanna/auto_pour/releases/tags/$GITHUB_REF_NAME" \
+          ASSETS="$(gh api "repos/CalsRanna/auto_pour/releases/tags/${{ github.ref_name }}" \
             --jq '[.assets[] | {name: .name, digest: .digest}]')"
           echo "$ASSETS"
           NAMES="$(echo "$ASSETS" | jq -r '[.[].name] | sort | join(" ")')"

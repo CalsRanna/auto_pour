@@ -148,7 +148,7 @@ jobs:
       - run: dart compile exe bin/tapster.dart -o build/tapster
 
       # 2. 创建 Release 并上传 asset（只碰当前仓库，GITHUB_TOKEN 足够）
-      - run: gh release create "$GITHUB_REF_NAME" build/tapster --generate-notes
+      - run: gh release create "${{ github.ref_name }}" build/tapster --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
 ```
@@ -173,7 +173,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: gh release create "$GITHUB_REF_NAME" --generate-notes
+      - run: gh release create "${{ github.ref_name }}" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -194,12 +194,12 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - run: dart compile exe bin/main.dart -o build/${{ matrix.asset }}
-      - run: gh release upload "$GITHUB_REF_NAME" "build/${{ matrix.asset }}" --clobber
+      - run: gh release upload "${{ github.ref_name }}" "build/${{ matrix.asset }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 ```
 
-> `gh release create` 先建空 Release；各平台 job 用 `gh release upload` 并行追加 asset（`--clobber` 容忍重跑）。注意 `GITHUB_REF_NAME` 已含 `v` 前缀，不要写成 `v$GITHUB_REF_NAME`。
+> `gh release create` 先建空 Release；各平台 job 用 `gh release upload` 并行追加 asset（`--clobber` 容忍重跑）。tag 名用 `${{ github.ref_name }}`（含 `v` 前缀，不要写成 `v${{ github.ref_name }}`）；**不要用 `$GITHUB_REF_NAME`**——Windows runner 默认 shell 是 PowerShell，会把 `$GITHUB_REF_NAME` 展开成空字符串，导致 `gh release upload` 报 release not found。
 >
 > 之后在发布侧分平台执行 `tapster publish -t homebrew/formula`（macOS / Linux）或 `tapster publish -t scoop`（Windows），各自推送托管仓库。由于 checksum 来自远端 asset digest（按 asset 文件名匹配），跨平台构建也保持一致。
 
