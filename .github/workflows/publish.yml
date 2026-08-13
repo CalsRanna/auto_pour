@@ -20,7 +20,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Create GitHub Release
-        run: gh release create "${{ github.ref_name }}" --generate-notes
+        # --draft=false 显式发布（避免留下草稿导致 tapster 读不到）；
+        # 已存在则跳过，保证重跑幂等
+        run: gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || gh release create "${{ github.ref_name }}" --generate-notes --draft=false
         env:
           GH_TOKEN: ${{ github.token }}
 
