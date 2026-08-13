@@ -1,137 +1,68 @@
 # Tapster - 分发工具
 
-Tapster 是一个用 Dart 编写的命令行工具，**只做分发（distribution）**：读取远端仓库的 Release 信息（tag + asset digest），基于 `.tapster.yaml` 配置生成 Homebrew Formula / Cask 和 Scoop manifest，并写入用户设置的托管仓库（tap / bucket）。
+Tapster 是一个命令行工具，帮你把 GitHub 上的工具**一键分发到 Homebrew 和 Scoop**：
+
+```
+你打一个 tag（v1.2.3）
+  → 云端 CI 自动构建三个平台的二进制并创建 GitHub Release
+  → 你运行 tapster publish
+  → macOS 用户 brew install 你的工具，Windows 用户 scoop install 你的工具
+```
+
+之后每次发版，重复这两步即可，全程不需要手动上传文件、手算校验和、手写安装脚本。
 
 **职责边界**：
 
 ```
-被发布仓库（仓库 B）自己的 CI：构建 → 打 tag → 创建 Release → 上传 asset
+被发布仓库（你的工具仓库）自己的 CI：构建 → 打 tag → 创建 Release → 上传 asset
   只碰自己的仓库，GITHUB_TOKEN 足够，零跨仓库凭据
 
 tapster（发布侧，本地，gh 已登录）：读远端 Release 信息 → 生成 manifest → 写入托管仓库
 ```
 
-tapster **不做**构建、不创建 Release、不上传 asset——这些是被发布仓库自己的 CI 的职责。tapster 的"分发"是：读远端状态（gh 已登录可读公开数据）、生成 manifest、写托管仓库（本地凭据写用户自己的仓库）。
-
-支持跨平台发布——同一版本可在不同操作系统上分次构建，每个平台生成各自的分发产物。
+tapster **不做**构建、不创建 Release、不上传 asset——这些是你工具仓库 CI 的职责。tapster 的"分发"是：读远端状态（gh 已登录可读公开数据）、生成 manifest、写托管仓库（本地凭据写用户自己的仓库）。
 
 ## ✨ 功能特性
 
 - 📝 **配置驱动**: 通过 `.tapster.yaml` 配置文件管理项目信息和发布设置
 - 🎯 **多目标支持**: 同时支持 Homebrew Formula、Homebrew Cask、Scoop 三种分发目标
-- 🌐 **跨平台分发**: 同一版本可在 macOS/Windows/Linux 上分次生成产物，Release 共享、仓库独立
-- 🏷️ **版本来自远端 Release**: 发布版本自动从远端最新 Release tag 解析（`--version` 可覆盖），配置**不含版本号**，生成后无需修改
-- 📦 **权威 checksum**: 自动从远端 Release asset 读取 digest（sha256），跨环境构建也一致
-- 🏗️ **模板生成**: 自动生成符合规范的 Formula/Cask Ruby 文件和 Scoop JSON manifest
+- 🏷️ **版本与校验和自动解析**: 版本来自远端 Release tag，checksum 来自远端 asset digest（GitHub 官方 digest 字段），**配置生成后永不修改**，杜绝手填校验和
+- 🌐 **双平台 Formula**: 配置 `linux_asset` 后生成 `if OS.mac? ... else ... end` 条件 formula，Linux 用户 brew install 装到正确二进制
+- 🛡️ **就绪检查**: `doctor` 检查配置、gh 认证、远端 Release、asset 完整性、checksum 可得性
+- 🔍 **精确版本分发**: `publish --version` 按 tag 精确读取对应 Release 的 digest，不会串版本
 - 📤 **推送托管仓库**: 生成后自动写入托管仓库（Homebrew tap / Scoop bucket），用本地 gh 凭据
-- 🛡️ **配置验证**: 严格验证配置文件的完整性和正确性
-- 🎯 **交互式配置**: 通过向导式界面生成项目配置，支持追加/覆盖
-- 🛠️ **托管仓库自动创建**: `init` 保存配置后自动创建分发所需的 tap/bucket（幂等，`--private` / `--yes` 控制）
-- 🔍 **就绪检查**: `doctor` 命令检查配置、gh 认证、checksum 可得性、远端 Release
 
 ## 📋 系统要求
 
-- **Dart**: 3.9.0 或更高版本
-- **Git**: 已安装（版本解析的 fallback 来源）
+- **Dart**: 3.9.0 或更高版本（仅编译时；已安装 tapster 可忽略）
+- **Git**: 已安装
 - **GitHub CLI**: 已安装并认证（`gh auth login`）——读取远端 Release、推送托管仓库都依赖它
 
-## 🚀 快速开始
+## 🚀 快速开始（新工具从零接入）
 
-### 1. 安装 Tapster
+假设你有一个 GitHub 仓库 `you/awesome-cli`，想让它能被 `brew install awesome-cli` 和 `scoop install awesome-cli` 安装。
 
-```bash
-# 克隆仓库
-git clone https://github.com/CalsRanna/auto_pour.git
-cd auto_pour
-
-# 获取依赖
-dart pub get
-
-# 直接运行
-dart run bin/tapster.dart --help
-
-# 或构建可执行文件
-dart compile exe bin/tapster.dart -o tapster
-```
-
-### 2. 创建配置文件
+### 第 1 步：安装 tapster（一次性）
 
 ```bash
-# 首次创建（默认 homebrew/formula + scoop —— CLI 工具形态，建 tap + bucket）
-tapster init
-
-# CLI 工具只需 formula（macOS/Linux）
-tapster init -t homebrew/formula
-
-# GUI 应用形态：cask + scoop（cask 进同一个 tap 的 Casks/ 目录）
-tapster init -t homebrew/cask -t scoop
+brew tap CalsRanna/tap
+brew install tapster
 ```
 
-### 3. 检查分发就绪状态
+### 第 2 步：登录 gh（一次性）
 
 ```bash
-# 检查配置完整性、gh 认证、远端 Release、checksum 可得性、输出目录
-dart run bin/tapster.dart doctor
-
-# 详细模式
-dart run bin/tapster.dart doctor -v
+gh auth login
+gh auth status   # 确认已认证
 ```
 
-### 4. 分发
+### 第 3 步：给你的工具仓库加 Release 流水线（一次性）
 
-```bash
-# 发布所有已配置目标（默认：读远端 Release → 生成 manifest → 推送托管仓库）
-dart run bin/tapster.dart publish
-
-# 只生成不推送（预览产物）
-dart run bin/tapster.dart publish --dry-run
-
-# 只分发指定目标
-dart run bin/tapster.dart publish -t homebrew/cask
-
-# 显式指定版本（跳过远端 Release tag 解析）
-dart run bin/tapster.dart publish --version 2.0.0
-```
-
-产物会生成到 `dist/`（可用 `-o` 指定），结构直接对应目标仓库布局：
-
-```
-dist/
-├── Formula/tapster.rb    # → Homebrew tap 的 Formula/ 目录
-├── Casks/MyApp.rb        # → Cask tap 的 Casks/ 目录
-└── my-app.json           # → Scoop bucket 的根目录
-```
-
-## 🔄 典型工作流
-
-```bash
-# 1. 初始化配置 + 创建托管仓库（一次性；仓库已存在自动跳过，幂等）
-tapster init -t homebrew/formula -t scoop
-#   …问答结束保存配置后，提示创建托管仓库 (Y/n)…
-#   ✓ Configuration saved to .tapster.yaml
-#   ✓ Repository created: CalsRanna/homebrew-tap
-#   ✓ Repository created: CalsRanna/scoop-bucket
-#   自定义仓库名：init 时手动输入；--private 私有、--yes 跳过确认
-#   （注意私有 bucket 无法被 scoop 安装）
-
-# 2. 构建并打 tag（被发布仓库自己的 CI 会构建并创建 Release）
-git tag v2.0.0 && git push origin v2.0.0
-#   → 仓库 B 的 CI：构建 → 创建 Release v2.0.0 → 上传 asset
-
-# 3. 分发（等 Release 建好后，发布侧执行）
-tapster publish
-#   → 读远端 Release v2.0.0 + asset digest
-#   → 生成 manifest（checksum 与已发布 asset 一致）
-#   → 推送托管仓库
-```
-
-## 🤖 被发布仓库的 CI
-
-**tapster 不需要在 CI 里跑**——它跑在发布侧（通常是开发者的本地，gh 已登录）。被发布仓库（仓库 B）自己的 CI 只负责构建和 Release：
+在工具仓库创建 `.github/workflows/release.yml`，**照抄下面这个模板**，只需改三处：工具名、编译命令、打包方式：
 
 ```yaml
-# .github/workflows/publish.yml —— 放在被发布仓库（如你分发的工具仓库）
-name: Publish
+name: Release
+
 on:
   push:
     tags: ['v*']
@@ -140,43 +71,14 @@ permissions:
   contents: write
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      # 1. 构建（按项目实际情况填写）
-      - run: dart compile exe bin/tapster.dart -o build/tapster
-
-      # 2. 创建 Release 并上传 asset（只碰当前仓库，GITHUB_TOKEN 足够）
-      - run: gh release create "${{ github.ref_name }}" build/tapster --generate-notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-```
-
-Release 建好后，在发布侧（本地）执行 `tapster publish`：
-
-```bash
-tapster publish
-# 输出示例：
-#   Remote release: v2.0.0 (1 asset(s) with digest)
-#   ✓ Formula pushed to CalsRanna/homebrew-tap
-```
-
-### 跨平台发布
-
-Dart AOT 编译不支持交叉编译：每个平台在对应 runner 上构建，**asset 名带平台后缀**（tapster 按 asset 文件名匹配远端 digest，URL 与 checksum 才能对得上）：
-
-```yaml
-jobs:
   # 先建空 Release（各平台 job 并行 upload，必须先存在）
+  # --draft=false 显式发布：草稿 Release 会被 tapster 忽略；
+  # 已存在则跳过，保证重跑幂等
   create-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: gh release create "${{ github.ref_name }}" --generate-notes
+      - run: gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || gh release create "${{ github.ref_name }}" --generate-notes --draft=false
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -195,79 +97,128 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - run: dart compile exe bin/main.dart -o build/${{ matrix.asset }}
-      - run: gh release upload "${{ github.ref_name }}" "build/${{ matrix.asset }}" --clobber
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.10.1
+
+      - run: dart pub get
+
+      - name: Resolve version from pubspec
+        shell: bash
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Compile
+        shell: bash
+        run: |
+          mkdir -p build    # CI 没有本地 build 目录，必须显式创建
+          dart compile exe bin/main.dart -o "build/${{ matrix.asset }}" -DAPP_VERSION="$VERSION"
+
+      - name: Upload asset
+        shell: bash
+        run: gh release upload "${{ github.ref_name }}" "build/${{ matrix.asset }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 ```
 
-> `gh release create` 先建空 Release；各平台 job 用 `gh release upload` 并行追加 asset（`--clobber` 容忍重跑）。tag 名用 `${{ github.ref_name }}`（含 `v` 前缀，不要写成 `v${{ github.ref_name }}`）；**不要用 `$GITHUB_REF_NAME`**——Windows runner 默认 shell 是 PowerShell，会把 `$GITHUB_REF_NAME` 展开成空字符串，导致 `gh release upload` 报 release not found。
->
-> 之后在发布侧分平台执行 `tapster publish -t homebrew/formula`（macOS / Linux）或 `tapster publish -t scoop`（Windows），各自推送托管仓库。由于 checksum 来自远端 asset digest（按 asset 文件名匹配），跨平台构建也保持一致。
+**asset 命名契约**（重要）：asset 名必须带平台后缀（`my-cli-macos` / `my-cli-linux` / `my-cli-windows.exe`），tapster 按 asset **文件名**匹配远端 digest，URL 与 checksum 才能对得上。三个平台的名字要与第 4 步配置里的 `asset` / `linux_asset` 完全一致。
 
-## ⚙️ 配置文件
+**Windows 打包注意**：如果 Windows 产物是 zip（GUI 应用），zip 内的 exe 名必须等于 asset 基名 + `.exe`（`MyApp-Windows.zip` 内是 `MyApp-Windows.exe`），否则 scoop 安装后命令指向不存在的文件。不一致时要么在打包步骤重命名 exe，要么在第 4 步配置里显式声明 `bin:` 字段。
 
-Tapster 使用 `.tapster.yaml` 配置文件管理项目信息，支持嵌套的 formula/cask/scoop 子配置：
+> 建议再加一个 `ci.yml`（push 触发 analyze + test，PR 也触发），保证每次推送云端自动验证编译。
 
-### Formula 配置（CLI 工具）
+### 第 4 步：初始化 tapster 配置（一次性）
+
+在工具仓库目录执行：
+
+```bash
+tapster init -t homebrew/formula -t scoop
+```
+
+交互式问答生成 `.tapster.yaml`（保存后会自动引导创建托管仓库；**建议所有工具共用一个 tap**：tap 填 `you/tap`，bucket 填 `you/scoop-bucket`——一个 tap/bucket 托管所有工具，后续新工具直接跳过建仓库步骤）。
+
+也可以手写，最小配置如下：
 
 ```yaml
-name: my-cli
-# 无需 version：发布版本由远端 Release tag 自动解析
-description: A command-line tool
-homepage: https://github.com/username/my-cli
-repository: https://github.com/username/my-cli.git
+name: my-cli                        # 用户安装后的命令名（小写+连字符）
+description: What my tool does
+homepage: https://github.com/you/awesome-cli
+repository: https://github.com/you/awesome-cli.git
 license: MIT
 
 formula:
-  tap: username/tap          # → 仓库 username/homebrew-tap
-  asset: build/my-cli
-  # checksum 由远端 asset digest 自动解析（可选 fallback，一般无需填写）
-  dependencies:
-    - openssl
-```
-
-### Cask 配置（macOS GUI）
-
-```yaml
-name: my-app
-description: A macOS application
-homepage: https://github.com/username/my-app
-repository: https://github.com/username/my-app.git
-license: MIT
-
-cask:
-  tap: username/tap          # → 仓库 username/homebrew-tap
-  asset: build/macos/my-app.zip
-  app_name: MyApp.app
-```
-
-### Scoop 配置（Windows GUI）
-
-```yaml
-name: my-app
-description: A Windows application
-homepage: https://github.com/username/my-app
-repository: https://github.com/username/my-app.git
-license: MIT
+  tap: you/tap                      # → 仓库 you/homebrew-tap
+  asset: build/my-cli-macos         # 与 release.yml 的 macOS asset 名一致
+  linux_asset: build/my-cli-linux   # 可选；提供则双平台 formula
+  dependencies: []                  # brew 依赖（如 gh）
 
 scoop:
-  bucket: username/scoop-bucket # 一个 bucket 托管所有工具
-  asset: build/windows/my-app.zip
-  arch: 64bit
-  checksum: a1b2c3d4e5f6...
-  shortcuts:
-    - MyApp
+  bucket: you/scoop-bucket          # 仓库名即 bucket 名
+  asset: build/my-cli-windows.exe   # 与 release.yml 的 Windows asset 名一致
+  # bin: my-cli-windows.exe         # 仅当 zip 内 exe 名与 asset 基名不一致时
+  shortcuts: []                     # GUI 应用可加开始菜单快捷方式
 ```
 
-### 配置字段说明
+**注意**：不要写 `version` 和 `checksum`——版本来自远端 Release tag、checksum 来自远端 asset digest，配置写死反而会随构建过期。
 
-#### 顶层字段
+### 第 5 步：发版（每次发布重复）
+
+```bash
+# 1. bump 版本号（pubspec.yaml: version: 1.0.0+1 → 1.0.1+2）
+git commit -m "chore: bump version to 1.0.1+2" && git push
+
+# 2. 打 tag 推送（纯 git 操作，本地不需要构建，云端自动构建三平台）
+git tag v1.0.1 && git push origin v1.0.1
+
+# 3. 等云端构建完成（GitHub Actions 页面或 gh run watch）
+```
+
+### 第 6 步：分发（每次发布重复）
+
+```bash
+tapster doctor      # 就绪检查：配置、gh、远端 Release、asset 完整性
+tapster publish     # 生成 manifest 并推送托管仓库
+# 输出示例：
+#   Remote release: v1.0.1 (3 asset(s) with digest)
+#   ✓ Formula pushed to you/homebrew-tap
+#   ✓ Scoop manifest pushed to you/scoop-bucket
+```
+
+### 验证
+
+```bash
+# macOS（用户侧）
+brew tap you/tap
+brew install my-cli
+
+# Windows（用户侧）
+scoop bucket add scoop-bucket https://github.com/you/scoop-bucket
+scoop install my-cli
+```
+
+## 🔄 典型工作流回顾
+
+```bash
+# 一次性
+brew tap CalsRanna/tap && brew install tapster
+cd my-tool && tapster init -t homebrew/formula -t scoop
+
+# 每次发版
+git tag v1.0.1 && git push origin v1.0.1   # → 云端构建 + Release
+tapster doctor && tapster publish          # → 分发到 tap/bucket
+```
+
+## ⚙️ 配置文件
+
+`.tapster.yaml` 支持嵌套的 formula/cask/scoop 子配置，字段说明：
+
+### 顶层字段
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `name` | String | ✅ | 包名（只允许小写字母、数字和连字符） |
+| `name` | String | ✅ | 包名（只允许小写字母、数字和连字符），即用户安装后的命令名 |
 | `version` | String | ❌ | 可选；发布版本由远端 Release tag 自动解析，通常无需填写 |
 | `description` | String | ✅ | 包的描述信息 |
 | `homepage` | String | ✅ | 项目主页 URL |
@@ -278,48 +229,41 @@ scoop:
 | `scoop` | Object | ❌ | Scoop 子配置 |
 
 > 至少需要配置一个分发目标（formula / cask / scoop）
->
-> `version` 可选且无需维护：配置生成后不再变化，版本始终来自远端 Release
 
-#### Formula 子字段
+### Formula 子字段（CLI 工具，macOS / Linux）
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `tap` | String | ✅ | 目标 Tap 名称（如 `homebrew-tools` 或 `owner/tap`） |
+| `tap` | String | ✅ | 目标 Tap 名称（`you/tap` → 仓库 `you/homebrew-tap`） |
 | `asset` | String | ✅ | macOS 二进制文件路径（远端 Release asset 文件名） |
-| `linux_asset` | String | ❌ | Linux 二进制 asset（可选）。提供时生成 `if OS.mac? ... else ... end` 双平台 formula，Linux 用户 brew install 才能装到对应二进制 |
-| `checksum` | String | ❌ | 预计算的 SHA256 校验和（**不推荐**：远端 digest 权威，配置值会随构建过期） |
+| `linux_asset` | String | ❌ | Linux 二进制 asset。提供时生成 `if OS.mac? ... else ... end` 双平台 formula |
+| `checksum` | String | ❌ | 预计算校验和（**不推荐**：远端 digest 权威，配置值会随构建过期） |
 | `dependencies` | List | ❌ | Homebrew 依赖包列表 |
 
-#### Cask 子字段
+### Cask 子字段（macOS GUI）
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `tap` | String | ✅ | 目标 Cask Tap 名称 |
-| `asset` | String | ✅ | App 归档文件路径（.zip） |
+| `tap` | String | ✅ | 目标 Cask Tap 名称（建议与 formula 共用 `you/tap`） |
+| `asset` | String | ✅ | App 归档文件路径（.zip，内含 `.app` 在根目录） |
 | `app_name` | String | ✅ | App 名称（如 `MyApp.app`） |
-| `checksum` | String | ❌ | 预计算的 SHA256 校验和 |
 
-#### Scoop 子字段
+### Scoop 子字段（Windows）
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `bucket` | String | ✅ | Scoop bucket 仓库（如 `owner/scoop-bucket`，仓库名即 bucket 名） |
+| `bucket` | String | ✅ | Scoop bucket 仓库（如 `you/scoop-bucket`，仓库名即 bucket 名） |
 | `asset` | String | ✅ | App 归档文件路径（.zip 或 .exe） |
-| `bin` | String | ❌ | zip 内可执行文件名（显式声明）。缺省按 asset 基名推导：`X.zip` → `X.exe`，**zip 内二进制名与 asset 基名不一致时必须设置**（否则安装后命令指向不存在的文件） |
+| `bin` | String | ❌ | zip 内可执行文件名。缺省按 asset 基名推导（`X.zip` → `X.exe`），**zip 内二进制名与 asset 基名不一致时必须设置** |
 | `arch` | String | ❌ | 架构（`64bit` / `32bit` / `arm64`，默认 `64bit`） |
-| `checksum` | String | ❌ | 预计算的 SHA256 校验和（**不推荐**：远端 digest 权威，配置值会随构建过期） |
 | `shortcuts` | List | ❌ | Scoop shortcuts 列表 |
 
 > Scoop manifest 的 `autoupdate.hash` 从 GitHub API 读取 asset digest
-> （`api.github.com/repos/{owner}/{repo}/releases/tags/v$version` +
-> jsonpath），GitHub Release 没有 `.sha256` 文件。
+> （`api.github.com` 的 jsonpath 提取），因此 `scoop update` 升级时校验和始终与远端一致。
 
 ## 🛠️ 命令详解
 
 ### `init` - 初始化配置 + 创建托管仓库
-
-创建或更新 `.tapster.yaml` 配置文件（版本由远端 Release 解析，配置生成后无需修改）。保存配置后引导创建分发所需的托管仓库（tap/bucket），已存在的自动跳过：
 
 ```bash
 tapster init [选项]
@@ -331,9 +275,9 @@ tapster init [选项]
 - `--private`: 创建私有托管仓库（注意私有 bucket 无法被 scoop 安装）
 - `-y, --yes`: 跳过仓库创建确认
 
-### `publish` - 分发
+保存配置后引导创建分发所需的托管仓库（tap/bucket），已存在的自动跳过（幂等）。
 
-读取远端 Release 信息，生成分发产物并推送到托管仓库：
+### `publish` - 分发
 
 ```bash
 tapster publish [选项]
@@ -342,31 +286,18 @@ tapster publish [选项]
 **选项：**
 - `--dry-run`: 只生成产物到 `-o` 目录，不推送托管仓库
 - `-o, --output`: 输出目录（默认 `dist`）
-- `--version`: 发布版本（默认从远端最新 Release tag 解析，如 `v1.2.3` → `1.2.3`）
+- `--version`: 发布版本（默认从远端最新 Release tag 解析）。**指定时按 tag 精确读取对应 Release 的 digest**——远端没有该 Release 会直接报错，不会生成版本与校验和不匹配的 manifest
 - `-t, --target`: 指定目标（`homebrew/formula` / `homebrew/cask` / `scoop`），可多次使用
 
 **分发流程：**
 1. 加载和验证配置文件
-2. 读远端最新 Release（`gh api`）：tag 作为版本号，asset digest 作为 checksum
-3. 生成 Formula → `dist/Formula/{name}.rb`（如配置）
-4. 生成 Cask → `dist/Casks/{name}.rb`（如配置）
-5. 生成 Scoop manifest → `dist/{name}.json`（如配置）
-6. 推送到托管仓库：formula → `Formula/{name}.rb`、cask → `Casks/{name}.rb`、
-   scoop → `{name}.json`（`--dry-run` 跳过此步）
+2. 读远端 Release 信息（`gh api`）：tag 作为版本号，asset digest 作为 checksum（在最近 10 个 Release 中优先选包含全部所需 asset 的；草稿 Release 会被忽略）
+3. 生成 Formula / Cask / Scoop manifest
+4. 推送到托管仓库（`--dry-run` 跳过此步）
 
-**版本解析优先级**：`--version` > 远端最新 Release tag > 本地 git tag。
-
-**checksum 解析优先级**：远端 Release asset digest（权威，与已发布 asset 一致）>
-配置预置 > 本地 asset 计算。
-
-**托管仓库解析**：`tap: owner/tap` → 仓库 `owner/homebrew-tap`（Homebrew
-命名规范，已带 `homebrew-` 前缀则不重复）；`bucket: owner/scoop-bucket` → 直接推送
-`owner/scoop-bucket`（仓库名即 bucket 名）。一个 tap/bucket 可托管多个工具，
-按工具名分发不同 manifest 即可。
+**checksum 解析优先级**：远端 Release asset digest（权威）> 本地 asset 计算 > 配置预置（带过期警告）。
 
 ### `doctor` - 分发就绪检查
-
-检查分发所需的前置条件：
 
 ```bash
 tapster doctor [选项]
@@ -378,11 +309,25 @@ tapster doctor [选项]
 **检查项目：**
 - 配置文件存在且通过验证
 - 至少配置了一个分发目标
-- gh 已安装并认证（读取远端 Release、推送托管仓库的依赖）
-- 远端 Release 可达（tag + asset digest 可读）
-- 每个目标的 checksum 可得（远端 digest / 配置预置 / 本地 asset，任一即可）
+- gh 已安装并认证
+- 远端 Release 可达（tag + asset digest 可读），所选 Release 是否缺 asset
+- 每个目标的 checksum 可得（远端 digest / 本地 asset / 配置预置，任一即可）
 - git 仓库中可解析 tag（版本 fallback，警告级）
 - 输出目录可写
+
+## 🐛 故障排除
+
+| 症状 | 原因 | 解决 |
+|------|------|------|
+| `doctor` 显示旧版本 / 缺 asset | 最新 Release 是草稿，或该 Release 缺某个平台的 asset | `gh release edit vX.Y.Z --draft=false`；等 CI 上传完所有 asset 再 publish |
+| publish 报 "No release found for tag vX.Y.Z" | `--version` 指定的 Release 不存在 | 先让 CI 创建该版本的 Release，或不传 `--version` |
+| scoop 装完命令找不到 | zip 内 exe 名与 asset 基名不一致（`bin` 指向了不存在的文件） | 在 `.tapster.yaml` 显式声明 `bin:`，或在打包时重命名 exe |
+| Linux 用户 brew 装到 macOS 二进制 | formula 没配 `linux_asset` | 配置 `linux_asset` 后重新 `tapster publish` |
+| CI `dart pub get` 失败 "requires the Flutter SDK" | 项目依赖了 Flutter 插件（如 package_info_plus） | 纯 Dart CLI 移除该依赖（检查是否真的被引用） |
+| CI 编译报 "Cannot open file ... build/xxx" | CI 没有本地 build 目录 | 编译前 `mkdir -p build` |
+| publish 报 "No checksum available" | 远端无该 asset 的 digest、本地无文件、配置无 checksum | 先让 CI 创建 Release 并上传 asset，或检查 asset 名拼写 |
+| brew 命令整体报错（如 `brew upgrade` 都失败） | tap 里某个 manifest 无效（如 cask 用了不支持的语法） | 修复并重新 publish 对应 manifest；tap 内所有 manifest 都会被 brew 解析 |
+| 推送托管仓库失败 | 本地 gh 账号对托管仓库无写权限 | 确认托管仓库 owner 与 gh 登录账号一致 |
 
 ## 🏗️ 项目架构
 
@@ -395,10 +340,10 @@ lib/
 ├── services/                  # 服务层
 │   ├── config_service.dart    # YAML 读/写/验证/迁移
 │   ├── github_service.dart    # gh 封装：远端 Release 读取 + Contents API 推送 + 仓库创建
-│   ├── formula_service.dart   # Formula 模板渲染
+│   ├── formula_service.dart   # Formula 模板渲染（含双平台条件块）
 │   ├── cask_service.dart      # Cask 模板渲染
-│   ├── scoop_service.dart     # Scoop manifest 生成
-│   ├── asset_service.dart     # 资源处理与哈希计算
+│   ├── scoop_service.dart     # Scoop manifest 生成（autoupdate 走 GitHub API）
+│   ├── asset_service.dart     # 资源处理、哈希计算、跨平台路径
 │   └── git_service.dart       # git tag 解析（版本 fallback）
 ├── models/                    # 数据模型
 │   └── tapster_config.dart    # 配置模型 (TapsterConfig / FormulaConfig / CaskConfig / ScoopConfig)
@@ -435,81 +380,9 @@ dart run bin/tapster.dart [command]
 dart compile exe bin/tapster.dart -o tapster
 ```
 
-## 📝 示例工作流
-
-### 新项目发布（单平台）
-
-```bash
-mkdir my-cli && cd my-cli
-# 默认 homebrew/formula + scoop（CLI 形态；只要 formula 用 -t homebrew/formula）
-tapster init
-# ... 构建二进制 ...
-
-# 1. 打 tag → 仓库 B 的 CI 构建并创建 Release
-git tag v1.0.0 && git push origin v1.0.0
-
-# 2. 等 Release 建好后，本地分发
-tapster doctor
-tapster publish
-# → 读远端 v1.0.0 + asset digest → 生成 formula → 推 homebrew-tap
-```
-
-### 跨平台 GUI 发布
-
-```bash
-# 1. 初始化（一次性配置两个目标）
-mkdir my-app && cd my-app
-tapster init -t homebrew/cask -t scoop
-
-# 2. 打 tag → 仓库 B 的 CI 分别构建 macOS/Windows 产物并上传到同一 Release
-git tag v2.0.0 && git push origin v2.0.0
-
-# 3. macOS 上分发 cask（checksum 自动取远端 macOS asset 的 digest）
-tapster publish -t homebrew/cask
-
-# 4. Windows 上分发 scoop（checksum 自动取远端 Windows asset 的 digest）
-tapster publish -t scoop
-```
-
-## 🐛 故障排除
-
-**1. publish 报 "No release found ... no local git tag"**
-- 先让仓库 B 的 CI 打 tag 并创建 Release
-- 或显式指定版本：`tapster publish --version 1.0.0`
-
-**2. 配置文件验证失败**
-```bash
-tapster doctor -v
-tapster init --force
-```
-
-**3. gh 未认证（读取远端、推送托管仓库都依赖 gh）**
-```bash
-gh auth login
-gh auth status
-```
-
-**4. 远端 Release 没有 asset digest 时 checksum 不可得**
-- 在 `.tapster.yaml` 中预置 `checksum`（fallback 来源）
-- 或本地有 asset 时 tapster 自动计算
-
-**5. 推送托管仓库失败**
-- 确认本地 gh 登录的账号对托管仓库（tap/bucket）有写权限
-- 确认 tap 命名正确：`owner/tap` 对应仓库 `owner/homebrew-tap`
-
-## 🤝 贡献
-
-欢迎贡献代码！
-
-1. Fork 项目
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
-
 ## 📄 许可证
 
-本项目采用 MIT 许可证。详情请参阅 [LICENSE](LICENSE) 文件。
+本项目采用 MIT 许可证。详情请参阅 [LICENSE](LICENSE)。
 
 ## 🙏 致谢
 
