@@ -10,7 +10,6 @@ cask "{{NAME}}" do
   name "{{APP_NAME}}"
   desc "{{DESCRIPTION}}"
   homepage "{{HOMEPAGE}}"
-  license "{{LICENSE}}"
 
   app "{{APP_TARGET}}"
 
@@ -37,6 +36,7 @@ end
 
     final url = _buildDownloadUrl(config, version, caskConfig.asset);
 
+    // 注意：Homebrew Cask DSL 没有 license 方法（formula 有），模板中不得使用
     final context = <String, String>{
       'NAME': config.name,
       'VERSION': version,
@@ -46,7 +46,6 @@ end
       'APP_TARGET': caskConfig.appName,
       'DESCRIPTION': config.description,
       'HOMEPAGE': config.homepage,
-      'LICENSE': config.license,
     };
 
     return _renderTemplate(caskTemplate, context);
