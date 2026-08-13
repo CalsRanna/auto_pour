@@ -14,6 +14,7 @@ formula:
   # 一个 tap 托管所有工具（多工具分发），不绑定 tapster 本身
   tap: CalsRanna/tap
   asset: build/tapster-macos
+  linux_asset: build/tapster-linux
   # checksum 由远端 Release asset digest 权威解析（tapster publish 自动填充）
   dependencies:
     - gh
