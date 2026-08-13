@@ -230,7 +230,8 @@ class InitCommand extends Command {
 
     print('');
     print('── Cask configuration ──');
-    final tap = await _askString('Cask tap', '$defaultOwner/homebrew-cask');
+    // 默认与 formula 同一 tap（cask 进同一 tap 的 Casks/ 目录）
+    final tap = await _askString('Cask tap', defaultTapName(defaultOwner));
     final asset = await _askString(
       'App archive path (.zip)',
       'build/macos/${config.name}.zip',
@@ -240,12 +241,11 @@ class InitCommand extends Command {
       '${config.name}.app',
     );
 
-    final checksum = await _maybeCalculateChecksum(asset);
+    await _maybeCalculateChecksum(asset);
     return CaskConfig(
       tap: tap,
       asset: asset,
       appName: appName,
-      checksum: checksum,
     );
   }
 
@@ -289,6 +289,10 @@ class InitCommand extends Command {
     // 默认标准命名（一个 tap 托管所有工具），setup 命令负责创建仓库
     final tap = await _askString('Tap name', defaultTapName(defaultOwner));
     final asset = await _askString('Binary file path', 'build/${config.name}');
+    final linuxAsset = await _askString(
+      'Linux binary file path (optional, leave empty for macOS-only)',
+      '',
+    );
     final depsInput = await _askString(
       'Dependencies (comma-separated, leave empty if none)',
       '',
@@ -301,11 +305,14 @@ class InitCommand extends Command {
               .where((d) => d.isNotEmpty)
               .toList();
 
-    final checksum = await _maybeCalculateChecksum(asset);
+    await _maybeCalculateChecksum(asset);
+    if (linuxAsset.trim().isNotEmpty) {
+      await _maybeCalculateChecksum(linuxAsset);
+    }
     return FormulaConfig(
       tap: tap,
       asset: asset,
-      checksum: checksum,
+      linuxAsset: linuxAsset.trim().isEmpty ? null : linuxAsset,
       dependencies: dependencies,
     );
   }
@@ -329,6 +336,12 @@ class InitCommand extends Command {
       'App archive path (.zip)',
       'build/windows/${config.name}.zip',
     );
+    // 契约：zip 内 exe 名默认等于 asset 基名（X.zip → X.exe）；
+    // 不一致时必须显式提供 bin
+    final bin = await _askString(
+      'Executable inside the zip (default: asset base name + .exe)',
+      '',
+    );
     final arch = await _askString('Architecture', '64bit');
 
     final shortcutsInput = await _askString(
@@ -343,12 +356,12 @@ class InitCommand extends Command {
               .where((s) => s.isNotEmpty)
               .toList();
 
-    final checksum = await _maybeCalculateChecksum(asset);
+    await _maybeCalculateChecksum(asset);
     return ScoopConfig(
       bucket: bucket,
       asset: asset,
       arch: arch,
-      checksum: checksum,
+      bin: bin.trim().isEmpty ? null : bin,
       shortcuts: shortcuts,
     );
   }
@@ -403,11 +416,13 @@ class InitCommand extends Command {
 
   Future<String?> _getGithubUsername() async {
     try {
-      final result = await Process.run('gh', ['api', 'user']);
+      final result = await Process.run(
+        'gh',
+        ['api', 'user', '--jq', '.login'],
+      );
       if (result.exitCode == 0) {
-        final output = result.stdout as String;
-        final match = RegExp(r'"login":\s*"([^"]+)"').firstMatch(output);
-        if (match != null) return match.group(1);
+        final username = (result.stdout as String).trim();
+        if (username.isNotEmpty) return username;
       }
     } catch (_) {}
 
@@ -455,18 +470,21 @@ class InitCommand extends Command {
 
   // ── Helpers ────────────────────────────────────────────────────
 
-  Future<String?> _maybeCalculateChecksum(String filePath) async {
+  /// 提示 asset 状态，但**不**把 checksum 写进配置：
+  /// checksum 由远端 release digest 权威解析，写死会随构建过期。
+  Future<void> _maybeCalculateChecksum(String filePath) async {
     if (await File(filePath).exists()) {
-      return await _calculateFileChecksum(filePath);
+      final checksum = await _calculateFileChecksum(filePath);
+      if (checksum != null) {
+        print('    Asset found (${checksum.substring(0, 16)}...)');
+      }
     } else {
       final buffer = StringBuffer()
         ..writeWarning('Asset file not found at $filePath');
       print(buffer.toString());
-      print(
-        '    Checksum will be resolved from the remote release digest on publish',
-      );
-      return null;
     }
+    print('    Checksum will be resolved from the remote release digest '
+        'on publish');
   }
 
   Future<void> _saveConfig(TapsterConfig config) async {

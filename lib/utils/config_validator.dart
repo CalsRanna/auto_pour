@@ -91,6 +91,17 @@ class ConfigValidator {
         warnings.add('formula.asset file not found: ${f.asset}');
       }
     }
+    if (f.linuxAsset != null && f.linuxAsset!.trim().isNotEmpty) {
+      final linuxFile = File(f.linuxAsset!);
+      if (!linuxFile.existsSync()) {
+        warnings.add('formula.linux_asset file not found: ${f.linuxAsset}');
+      }
+    }
+    if (f.checksum != null && f.checksum!.isNotEmpty) {
+      warnings.add('formula.checksum is configured — it may go stale; '
+          'the remote release digest is authoritative. '
+          'Consider removing it from .tapster.yaml');
+    }
     for (final dep in f.dependencies) {
       if (dep.trim().isEmpty) {
         warnings.add('Empty formula dependency found');
@@ -128,6 +139,24 @@ class ConfigValidator {
       if (!file.existsSync()) {
         warnings.add('scoop.asset file not found: ${s.asset}');
       }
+      if (s.bin == null || s.bin!.trim().isEmpty) {
+        // 契约提示：bin 缺省按 asset 基名推导
+        final normalized = s.asset.replaceAll('\\', '/');
+        final fileName = normalized.split('/').last;
+        final derived = fileName.endsWith('.zip')
+            ? fileName.substring(0, fileName.length - 4)
+            : fileName;
+        warnings.add('scoop.bin not set — the zip must contain '
+            '"$derived.exe"; set scoop.bin explicitly if it differs');
+      }
+    }
+    if (s.bin != null && s.bin!.trim().isNotEmpty && !s.bin!.endsWith('.exe')) {
+      warnings.add('scoop.bin should end with .exe: ${s.bin}');
+    }
+    if (s.checksum != null && s.checksum!.isNotEmpty) {
+      warnings.add('scoop.checksum is configured — it may go stale; '
+          'the remote release digest is authoritative. '
+          'Consider removing it from .tapster.yaml');
     }
     if (!['64bit', '32bit', 'arm64'].contains(s.arch)) {
       warnings.add('scoop.arch should be 64bit, 32bit, or arm64, got: ${s.arch}');

@@ -61,7 +61,7 @@ end
 
   String _buildDownloadUrl(TapsterConfig config, String version, String assetPath) {
     final repo = config.repository.replaceAll('.git', '');
-    final assetFileName = assetPath.split('/').last;
+    final assetFileName = AssetService.basename(assetPath);
     return '$repo/releases/download/v$version/$assetFileName';
   }
 }

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:tapster/models/tapster_config.dart';
 import 'package:tapster/services/asset_service.dart';
 
@@ -8,14 +7,28 @@ class FormulaService {
 class {{CLASS_NAME}} < Formula
   desc "{{DESCRIPTION}}"
   homepage "{{HOMEPAGE}}"
-  url "{{URL}}"
+{{#if LINUX_URL}}  if OS.mac?
+    url "{{URL}}"
+    sha256 "{{SHA256}}"
+  else
+    url "{{LINUX_URL}}"
+    sha256 "{{LINUX_SHA256}}"
+  end
+{{else}}  url "{{URL}}"
   sha256 "{{SHA256}}"
+{{/if}}
   license "{{LICENSE}}"
 
-  {{#if depends_on_brew}}{{#each depends_on_brew}}depends_on "{{this}}"{{/each}}{{/if}}
+  {{#each depends_on_brew}}depends_on "{{this}}"{{/each}}
 
   def install
-    {{INSTALL}}
+{{#if LINUX_URL}}    if OS.mac?
+      {{MAC_INSTALL}}
+    else
+      {{LINUX_INSTALL}}
+    end
+{{else}}    {{INSTALL}}
+{{/if}}
   end
 
   test do
@@ -24,10 +37,13 @@ class {{CLASS_NAME}} < Formula
 end
 ''';
 
+  /// 生成 Formula。`linuxChecksum` 非空时（对应 `formulaConfig.linuxAsset`）
+  /// 输出 macOS/Linux 双平台条件块，否则只有 macOS 单 url。
   Future<String> generateFormula(
     TapsterConfig config,
     FormulaConfig formulaConfig, {
     required String version,
+    String? linuxChecksum,
   }) async {
     final assetService = AssetService();
     final now = DateTime.now().toUtc();
@@ -47,17 +63,23 @@ end
       // 预置 checksum 时不读取本地 asset（跨平台发布时 asset 可能不在本地）
       context['SHA256'] = formulaConfig.checksum ??
           (await assetService.getAssetInfo(formulaConfig.asset)).checksum;
-      // 命令名 = 包名：asset 文件名带平台后缀（如 tapster-macos）时，
-      // 安装重命名为包名，用户直接敲包名；文件名与包名相同则不重命名
-      final executableName = _getExecutableName(formulaConfig.asset);
-      final installedName = config.name;
-      if (executableName == installedName) {
-        context['INSTALL'] = 'bin.install "$executableName"';
-        context['TEST_CMD'] = '"#{bin}/$executableName"';
-      } else {
-        context['INSTALL'] = 'bin.install "$executableName" => "$installedName"';
-        context['TEST_CMD'] = '"#{bin}/$installedName"';
-      }
+      final macExecutable = AssetService.basename(formulaConfig.asset);
+      context['INSTALL'] = _installStatement(macExecutable, config.name);
+      context['MAC_INSTALL'] = context['INSTALL'];
+      // 安装后命令名 = 包名（rename 或同名皆然）
+      context['TEST_CMD'] = '"#{bin}/${config.name}"';
+    }
+
+    // Optional Linux asset — dual-platform formula
+    final linuxAsset = formulaConfig.linuxAsset;
+    if (linuxAsset != null && linuxAsset.isNotEmpty) {
+      context['LINUX_URL'] = _getDefaultUrl(config, version, linuxAsset);
+      context['LINUX_SHA256'] = linuxChecksum ??
+          (await assetService.getAssetInfo(linuxAsset)).checksum;
+      context['LINUX_INSTALL'] = _installStatement(
+        AssetService.basename(linuxAsset),
+        config.name,
+      );
     }
 
     // Handle dependencies
@@ -66,6 +88,16 @@ end
     }
 
     return _renderTemplate(defaultFormulaTemplate, context);
+  }
+
+  /// 安装语句：可执行名与包名一致时不带 rename hash
+  /// （`bin.install "tapster"`），不一致时重命名为包名
+  /// （`bin.install "tapster-macos" => "tapster"`）。
+  String _installStatement(String executable, String installedName) {
+    if (executable == installedName) {
+      return 'bin.install "$executable"';
+    }
+    return 'bin.install "$executable" => "$installedName"';
   }
 
   String _renderTemplate(String template, Map<String, dynamic> context) {
@@ -152,19 +184,11 @@ end
         .join('');
   }
 
-  String _getExecutableName(String path) {
-    return _getFileName(path);
-  }
-
-  String _getFileName(String path) {
-    return path.split(Platform.pathSeparator).last;
-  }
-
   String _getDefaultUrl(TapsterConfig config, String version, String assetPath) {
     // Generate GitHub release URL（asset 文件名，与 cask/scoop 一致；
     // checksum 解析同样按 asset 文件名匹配远端 digest）
     final repo = config.repository.replaceAll('.git', '');
-    final assetFileName = assetPath.split('/').last;
+    final assetFileName = AssetService.basename(assetPath);
     return '$repo/releases/download/v$version/$assetFileName';
   }
 }

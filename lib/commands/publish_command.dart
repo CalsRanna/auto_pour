@@ -70,8 +70,35 @@ class PublishCommand extends Command {
 
       // Fetch remote release info (authoritative tag + asset digests)
       final repoString = parseRepoString(config.repository);
-      final release = await GitHubService()
-          .fetchLatestRelease(repoString.$1, repoString.$2);
+      final githubService = GitHubService();
+      final explicitVersion = argResults!['version'] as String?;
+
+      ReleaseInfo? release;
+      if (explicitVersion != null && explicitVersion.isNotEmpty) {
+        // --version 指定时必须取对应版本的 Release：digest 与 version
+        // 必须一致，否则生成的 manifest checksum 必然错。
+        release = await githubService.fetchReleaseByTag(
+          repoString.$1,
+          repoString.$2,
+          explicitVersion,
+        );
+        if (release == null) {
+          throw Exception(
+            'No release found for tag v$explicitVersion in '
+            '${repoString.$1}/${repoString.$2}. '
+            'Let the hosting repo CI create the release first, '
+            'or drop --version.',
+          );
+        }
+      } else {
+        // 默认取最新 release，但优先选择包含全部所需 asset 的
+        // （最新 release 可能缺 asset 或 digest 尚未生成）
+        release = await githubService.fetchLatestRelease(
+          repoString.$1,
+          repoString.$2,
+          requiredAssets: _requiredAssetNames(config),
+        );
+      }
 
       // Resolve release version: --version > remote release tag > local git tag
       final version = await _resolveVersion(config, release);
@@ -116,6 +143,15 @@ class PublishCommand extends Command {
           '    Remote release: ${release.tagName} '
           '(${release.assetDigests.length} asset(s) with digest)',
         );
+        final missing = _missingAssets(config, release);
+        if (missing.isNotEmpty) {
+          final warn = StringBuffer()
+            ..writeWarning('Release ${release.tagName} is missing asset(s)');
+          print(warn.toString());
+          for (final name in missing) {
+            print('    - $name');
+          }
+        }
       }
 
       final outputDir = argResults!['output'] as String;
@@ -128,14 +164,15 @@ class PublishCommand extends Command {
       // Generate artifacts
       final results = <String, String>{};
       if (publishFormula && config.formula != null) {
+        final (formulaConfig, linuxChecksum) = await _withFormulaChecksum(
+          config.formula!,
+          release,
+        );
         final formula = await FormulaService().generateFormula(
           config,
-          await _withFormulaChecksum(
-            config.formula!,
-            release,
-            config.formula!.asset,
-          ),
+          formulaConfig,
           version: version,
+          linuxChecksum: linuxChecksum,
         );
         final path = '$outputDir/Formula/${config.name}.rb';
         await _writeArtifact(path, formula);
@@ -238,22 +275,31 @@ class PublishCommand extends Command {
     );
   }
 
-  /// 解析目标的 SHA256：远端 asset digest > 配置预置 > 本地 asset 计算。
+  /// 解析 formula 的 SHA256（macOS asset + 可选 Linux asset）。
   ///
   /// 生成服务读 `config.*.checksum` 非空时不再触碰本地 asset，
-  /// 因此这里把解析结果写回子配置。
-  Future<FormulaConfig> _withFormulaChecksum(
+  /// 因此这里把解析结果写回子配置；Linux checksum 单独返回
+  /// （配置 checksum 是单值，不能用于 Linux asset）。
+  Future<(FormulaConfig, String?)> _withFormulaChecksum(
     FormulaConfig formula,
     ReleaseInfo? release,
-    String assetPath,
   ) async {
     final checksum = await _resolveChecksum(
       release: release,
-      assetPath: assetPath,
+      assetPath: formula.asset,
       configuredChecksum: formula.checksum,
       targetLabel: 'formula',
     );
-    return formula.copyWith(checksum: checksum);
+    String? linuxChecksum;
+    if (formula.linuxAsset != null) {
+      linuxChecksum = await _resolveChecksum(
+        release: release,
+        assetPath: formula.linuxAsset!,
+        configuredChecksum: null,
+        targetLabel: 'formula (linux)',
+      );
+    }
+    return (formula.copyWith(checksum: checksum), linuxChecksum);
   }
 
   Future<CaskConfig> _withCaskChecksum(
@@ -291,28 +337,56 @@ class PublishCommand extends Command {
     required String targetLabel,
   }) async {
     // 1. 远端 digest（按 asset 文件名匹配）——权威，与已发布 asset 一致
-    final assetName = assetPath.split('/').last;
+    final assetName = AssetService.basename(assetPath);
     if (release != null) {
       final digest = release.assetDigests[assetName];
       if (digest != null) return digest;
     }
 
-    // 2. 配置预置
-    if (configuredChecksum != null && configuredChecksum.isNotEmpty) {
-      return configuredChecksum;
-    }
-
-    // 3. 本地 asset 计算
+    // 2. 本地 asset 计算（当前文件内容，优于可能过期的配置值）
     final assetFile = File(assetPath);
     if (await assetFile.exists()) {
       final info = await AssetService().getAssetInfo(assetPath);
       return info.checksum;
     }
 
+    // 3. 配置预置——仅兜底，明确警告可能过期：
+    //    版本来自远端、checksum 来自配置时二者大概率不匹配
+    if (configuredChecksum != null && configuredChecksum.isNotEmpty) {
+      final warn = StringBuffer()
+        ..writeWarning(
+          '$targetLabel: using configured checksum (may be stale)',
+        );
+      print(warn.toString());
+      print('    Consider removing "checksum" from .tapster.yaml so the');
+      print('    remote release digest is always used.');
+      return configuredChecksum;
+    }
+
     throw Exception(
       'No checksum available for $targetLabel: no remote digest for '
       '$assetName, no configured checksum, and no local asset at $assetPath.',
     );
+  }
+
+  /// 所有已配置目标的 asset 文件名集合（远端 digest 匹配键）。
+  Set<String> _requiredAssetNames(TapsterConfig config) {
+    final names = <String>{
+      if (config.formula != null)
+        AssetService.basename(config.formula!.asset),
+      if (config.formula?.linuxAsset != null)
+        AssetService.basename(config.formula!.linuxAsset!),
+      if (config.cask != null) AssetService.basename(config.cask!.asset),
+      if (config.scoop != null) AssetService.basename(config.scoop!.asset),
+    };
+    return names;
+  }
+
+  /// 所选 release 中缺失的 asset 文件名。
+  List<String> _missingAssets(TapsterConfig config, ReleaseInfo release) {
+    return _requiredAssetNames(config)
+        .where((name) => !release.assetDigests.containsKey(name))
+        .toList();
   }
 
   /// 推送 manifest 到各托管仓库。

@@ -286,8 +286,9 @@ scoop:
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `tap` | String | ✅ | 目标 Tap 名称（如 `homebrew-tools` 或 `owner/tap`） |
-| `asset` | String | ✅ | 二进制文件路径 |
-| `checksum` | String | ❌ | 预计算的 SHA256 校验和 |
+| `asset` | String | ✅ | macOS 二进制文件路径（远端 Release asset 文件名） |
+| `linux_asset` | String | ❌ | Linux 二进制 asset（可选）。提供时生成 `if OS.mac? ... else ... end` 双平台 formula，Linux 用户 brew install 才能装到对应二进制 |
+| `checksum` | String | ❌ | 预计算的 SHA256 校验和（**不推荐**：远端 digest 权威，配置值会随构建过期） |
 | `dependencies` | List | ❌ | Homebrew 依赖包列表 |
 
 #### Cask 子字段
@@ -304,10 +305,15 @@ scoop:
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `bucket` | String | ✅ | Scoop bucket 仓库（如 `owner/scoop-bucket`，仓库名即 bucket 名） |
-| `asset` | String | ✅ | App 归档文件路径（.zip） |
+| `asset` | String | ✅ | App 归档文件路径（.zip 或 .exe） |
+| `bin` | String | ❌ | zip 内可执行文件名（显式声明）。缺省按 asset 基名推导：`X.zip` → `X.exe`，**zip 内二进制名与 asset 基名不一致时必须设置**（否则安装后命令指向不存在的文件） |
 | `arch` | String | ❌ | 架构（`64bit` / `32bit` / `arm64`，默认 `64bit`） |
-| `checksum` | String | ❌ | 预计算的 SHA256 校验和 |
+| `checksum` | String | ❌ | 预计算的 SHA256 校验和（**不推荐**：远端 digest 权威，配置值会随构建过期） |
 | `shortcuts` | List | ❌ | Scoop shortcuts 列表 |
+
+> Scoop manifest 的 `autoupdate.hash` 从 GitHub API 读取 asset digest
+> （`api.github.com/repos/{owner}/{repo}/releases/tags/v$version` +
+> jsonpath），GitHub Release 没有 `.sha256` 文件。
 
 ## 🛠️ 命令详解
 

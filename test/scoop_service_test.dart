@@ -157,5 +157,90 @@ void main() {
         ['my-cli.exe', 'MyApp'],
       ]);
     });
+
+    test('autoupdate hash uses the GitHub API digest jsonpath', () async {
+      final config = sampleConfig(
+        scoop: ScoopConfig(
+          bucket: 'owner/scoop-bucket',
+          asset: 'build/windows/my-app.zip',
+          checksum: 'c' * 64,
+        ),
+      );
+
+      final manifestJson = await ScoopService().generateScoopManifest(
+        config,
+        config.scoop!,
+        version: '1.2.3',
+      );
+      final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
+
+      final autoupdate = manifest['autoupdate'] as Map<String, dynamic>;
+      expect(
+        autoupdate['url'],
+        'https://github.com/owner/my-cli/releases/download/'
+        r'v$version' '/my-app.zip',
+      );
+      final hash = autoupdate['hash'] as Map<String, dynamic>;
+      expect(
+        hash['url'],
+        'https://api.github.com/repos/owner/my-cli/releases/tags/'
+        r'v$version',
+      );
+      expect(
+        hash['jsonpath'],
+        r"$.assets[?(@.name=='my-app.zip')].digest",
+      );
+    });
+
+    test('explicit bin overrides the asset-name derivation', () async {
+      final config = sampleConfig(
+        name: 'my-app',
+        scoop: ScoopConfig(
+          bucket: 'owner/scoop-bucket',
+          asset: 'build/windows/my-app.zip',
+          bin: 'real-app.exe',
+          checksum: 'c' * 64,
+        ),
+      );
+
+      final manifestJson = await ScoopService().generateScoopManifest(
+        config,
+        config.scoop!,
+        version: '1.2.3',
+      );
+      final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
+
+      // zip 内 exe 名显式声明为 real-app.exe，安装后命令重命名为包名
+      expect(manifest['bin'], [
+        ['real-app.exe', 'my-app'],
+      ]);
+    });
+
+    test('handles windows-style asset paths', () async {
+      final config = sampleConfig(
+        scoop: ScoopConfig(
+          bucket: 'owner/scoop-bucket',
+          asset: r'build\windows\my-app.zip',
+          checksum: 'c' * 64,
+        ),
+      );
+
+      final manifestJson = await ScoopService().generateScoopManifest(
+        config,
+        config.scoop!,
+        version: '1.2.3',
+      );
+      final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
+
+      expect(
+        manifest['url'],
+        'https://github.com/owner/my-cli/releases/download/v1.2.3/'
+        'my-app.zip',
+      );
+      // asset 基名 my-app != 包名 my-cli → bin 数组语法重命名
+      expect(manifest['bin'], [
+        ['my-app.exe', 'my-cli'],
+      ]);
+    });
   });
 }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:tapster/models/tapster_config.dart';
 import 'package:tapster/services/asset_service.dart';
+import 'package:tapster/utils/repo_utils.dart';
 
 class ScoopService {
   Future<String> generateScoopManifest(
@@ -18,15 +19,18 @@ class ScoopService {
       sha256 = assetInfo.checksum;
     }
 
+    final assetName = AssetService.basename(scoopConfig.asset);
     final url = _buildDownloadUrl(config, version, scoopConfig.asset);
 
-    // 用户命令名 = 包名：asset 文件名带平台后缀（tapster-windows.exe）时，
-    // 用 Scoop 数组语法重命名安装，用户直接敲包名；同名则保持简单字符串
-    final binName = _extractBinaryName(scoopConfig.asset);
+    // zip 内 exe 名：显式 bin 声明优先，缺省按 asset 基名推导
+    // （契约：`X.zip` 内二进制名为 `X.exe`；不一致时必须显式声明 bin）
+    final binName = scoopConfig.bin ?? _extractBinaryName(assetName);
     final baseName = binName.endsWith('.exe')
         ? binName.substring(0, binName.length - 4)
         : binName;
     final renamesToPackageName = baseName != config.name;
+
+    final (owner, repo) = parseRepoString(config.repository);
 
     final manifest = <String, dynamic>{
       'version': version,
@@ -41,8 +45,13 @@ class ScoopService {
       },
       'autoupdate': {
         'url': _buildDownloadUrl(config, r'$version', scoopConfig.asset),
+        // digest 来自 GitHub API（release asset 的 digest 字段，
+        // 自带 sha256: 前缀）——GitHub Release 没有 .sha256 文件，
+        // 固定 URL 会 404
         'hash': {
-          'url': '$url.sha256',
+          'url': 'https://api.github.com/repos/$owner/$repo/releases/tags/'
+              r'v$version',
+          'jsonpath': '\$.assets[?(@.name==\'$assetName\')].digest',
         },
       },
     };
@@ -63,8 +72,8 @@ class ScoopService {
     return encoder.convert(manifest);
   }
 
-  String _extractBinaryName(String assetPath) {
-    var fileName = assetPath.split('/').last;
+  String _extractBinaryName(String assetFileName) {
+    var fileName = assetFileName;
     if (fileName.endsWith('.zip')) {
       fileName = fileName.substring(0, fileName.length - 4);
     }
@@ -76,7 +85,7 @@ class ScoopService {
 
   String _buildDownloadUrl(TapsterConfig config, String version, String assetPath) {
     final repo = config.repository.replaceAll('.git', '');
-    final assetFileName = assetPath.split('/').last;
+    final assetFileName = AssetService.basename(assetPath);
     return '$repo/releases/download/v$version/$assetFileName';
   }
 }

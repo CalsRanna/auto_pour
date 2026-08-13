@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:cli_spin/cli_spin.dart';
 import 'package:tapster/models/tapster_config.dart';
+import 'package:tapster/services/asset_service.dart';
 import 'package:tapster/services/config_service.dart';
 import 'package:tapster/services/git_service.dart';
 import 'package:tapster/services/github_service.dart';
@@ -160,8 +161,12 @@ class DoctorCommand extends Command {
     List<String> warnings,
   ) async {
     final repoString = parseRepoString(config.repository);
-    final release = await GitHubService()
-        .fetchLatestRelease(repoString.$1, repoString.$2);
+    final requiredAssets = _configuredAssetNames(config);
+    final release = await GitHubService().fetchLatestRelease(
+      repoString.$1,
+      repoString.$2,
+      requiredAssets: requiredAssets,
+    );
 
     if (release == null) {
       final buffer = StringBuffer()
@@ -178,6 +183,20 @@ class DoctorCommand extends Command {
           '${release.assetDigests.length} asset(s) with digest)',
         );
       print(buffer.toString());
+      final missing = requiredAssets
+          .where((name) => !release.assetDigests.containsKey(name))
+          .toList();
+      if (missing.isNotEmpty) {
+        final warn = StringBuffer()
+          ..writeWarning('Release ${release.tagName} is missing asset(s)');
+        print(warn.toString());
+        for (final name in missing) {
+          print('    - $name');
+        }
+        warnings.add(
+          'Release ${release.tagName} is missing: ${missing.join(', ')}',
+        );
+      }
       if (verbose) {
         for (final entry in release.assetDigests.entries) {
           print('    ${entry.key}: ${entry.value.substring(0, 16)}...');
@@ -185,6 +204,18 @@ class DoctorCommand extends Command {
       }
     }
     return release;
+  }
+
+  /// 配置中所有目标的 asset 文件名集合。
+  Set<String> _configuredAssetNames(TapsterConfig config) {
+    return <String>{
+      if (config.formula != null)
+        AssetService.basename(config.formula!.asset),
+      if (config.formula?.linuxAsset != null)
+        AssetService.basename(config.formula!.linuxAsset!),
+      if (config.cask != null) AssetService.basename(config.cask!.asset),
+      if (config.scoop != null) AssetService.basename(config.scoop!.asset),
+    };
   }
 
   Future<void> _checkChecksumAvailability(
@@ -196,7 +227,7 @@ class DoctorCommand extends Command {
     List<String> issues,
     List<String> warnings,
   ) async {
-    final assetName = assetPath.split('/').last;
+    final assetName = AssetService.basename(assetPath);
 
     // 1. Remote digest
     final remoteDigest = release?.assetDigests[assetName];
@@ -210,14 +241,15 @@ class DoctorCommand extends Command {
       return;
     }
 
-    // 2. Configured checksum
+    // 2. Configured checksum（可能过期——远端缺失时才会用到）
     if (configuredChecksum.isNotEmpty) {
       final buffer = StringBuffer()
-        ..writeSuccess('$target: checksum configured');
+        ..writeWarning('$target: checksum only in config (may be stale)');
       print(buffer.toString());
       if (verbose) {
         print('    ${configuredChecksum.substring(0, 16)}...');
       }
+      warnings.add('$target: configured checksum may be stale');
       return;
     }
 

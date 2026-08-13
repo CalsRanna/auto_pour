@@ -11,38 +11,89 @@ class GitHubService {
 
   /// 获取远端仓库最新的非 draft Release 及其 asset digest。
   ///
+  /// [requiredAssets] 非空时，在最近 10 个非 draft 的 v* release 中
+  /// 选第一个包含全部所需 asset digest 的；都没有时回退为其中最新
+  /// 的一个（调用方根据 [ReleaseInfo.assetDigests] 判断缺哪些）。
+  ///
   /// 返回 `null` 表示没有可用 Release（如仓库无 Release、非 v* tag、
   /// 或 gh 不可用/未认证）。
-  Future<ReleaseInfo?> fetchLatestRelease(String owner, String repo) async {
+  Future<ReleaseInfo?> fetchLatestRelease(
+    String owner,
+    String repo, {
+    Set<String>? requiredAssets,
+  }) async {
     try {
       final result = await _runGh([
         'api',
         'repos/$owner/$repo/releases',
         '--jq',
-        '[.[] | select(.draft == false and (.tag_name | startswith("v")))][0]',
+        '[.[] | select(.draft == false and (.tag_name | startswith("v")))][0:10]',
       ]);
       if (result.exitCode != 0 || result.stdout.trim().isEmpty) return null;
 
-      final data = jsonDecode(result.stdout) as Map<String, dynamic>;
-      final tagName = data['tag_name'] as String?;
-      if (tagName == null) return null;
+      final releases = jsonDecode(result.stdout) as List;
+      if (releases.isEmpty) return null;
 
-      final digests = <String, String>{};
-      final assets = data['assets'] as List? ?? [];
-      for (final asset in assets) {
-        if (asset is Map<String, dynamic>) {
-          final name = asset['name'] as String?;
-          final digest = asset['digest'] as String?;
-          if (name != null && digest != null) {
-            digests[name] = stripDigestPrefix(digest);
-          }
+      // 选第一个包含全部所需 asset 的 release；都没有则取最新
+      ReleaseInfo? fallback;
+      for (final raw in releases) {
+        final info = _parseRelease(raw as Map<String, dynamic>);
+        if (info == null) continue;
+        fallback ??= info;
+        if (requiredAssets == null ||
+            info.assetDigests.keys.toSet().containsAll(requiredAssets)) {
+          return info;
         }
       }
-
-      return ReleaseInfo(tagName: tagName, assetDigests: digests);
+      return fallback;
     } catch (e) {
       return null;
     }
+  }
+
+  /// 按 tag 获取指定 Release（供 `--version` 场景：digest 必须来自
+  /// 对应版本的 Release，而不是最新版）。
+  ///
+  /// tag 无 `v` 前缀时自动补 `v` 重试。找不到返回 `null`。
+  Future<ReleaseInfo?> fetchReleaseByTag(
+    String owner,
+    String repo,
+    String tag,
+  ) async {
+    final normalized = tag.startsWith('v') ? tag : 'v$tag';
+    for (final candidate in {normalized, normalized.substring(1)}) {
+      try {
+        final result = await _runGh([
+          'api',
+          'repos/$owner/$repo/releases/tags/$candidate',
+        ]);
+        if (result.exitCode != 0) continue;
+        final data = jsonDecode(result.stdout) as Map<String, dynamic>;
+        return _parseRelease(data);
+      } catch (e) {
+        // try the other form
+      }
+    }
+    return null;
+  }
+
+  ReleaseInfo? _parseRelease(Map<String, dynamic> data) {
+    final tagName = data['tag_name'] as String?;
+    if (tagName == null) return null;
+
+    final digests = <String, String>{};
+    final assets = data['assets'] as List? ?? [];
+    for (final asset in assets) {
+      if (asset is Map<String, dynamic>) {
+        final name = asset['name'] as String?;
+        final digest = asset['digest'] as String?;
+        if (name != null && digest != null) {
+          digests[name] = stripDigestPrefix(digest);
+        }
+      }
+    }
+
+    return ReleaseInfo(tagName: tagName, assetDigests: digests);
   }
 
   /// 推送文件到仓库（GitHub Contents API）。

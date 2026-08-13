@@ -161,5 +161,58 @@ void main() {
 
       expect(formula, contains('class MyCoolTool < Formula'));
     });
+
+    test('renders single-platform formula without a linux asset', () async {
+      final config = sampleConfig();
+
+      final formula = await FormulaService().generateFormula(
+        config,
+        config.formula!,
+        version: '1.2.3',
+      );
+
+      expect(formula, isNot(contains('OS.mac?')));
+      expect(formula, contains('bin.install "my-cli"'));
+    });
+
+    test('renders dual-platform formula with OS conditional blocks', () async {
+      final config = sampleConfig(
+        formula: FormulaConfig(
+          tap: 'owner/homebrew-tools',
+          asset: 'build/my-cli-macos',
+          linuxAsset: 'build/my-cli-linux',
+          checksum: 'a' * 64,
+        ),
+      );
+
+      final formula = await FormulaService().generateFormula(
+        config,
+        config.formula!,
+        version: '1.2.3',
+        linuxChecksum: 'b' * 64,
+      );
+
+      expect(formula, contains('if OS.mac?'));
+      expect(formula, contains('url '
+          '"https://github.com/owner/my-cli/releases/download/v1.2.3/'
+          'my-cli-macos"'));
+      expect(formula, contains('url '
+          '"https://github.com/owner/my-cli/releases/download/v1.2.3/'
+          'my-cli-linux"'));
+      expect(formula, contains('sha256 "${'a' * 64}"'));
+      expect(formula, contains('sha256 "${'b' * 64}"'));
+      expect(
+        formula,
+        contains('bin.install "my-cli-macos" => "my-cli"'),
+      );
+      expect(
+        formula,
+        contains('bin.install "my-cli-linux" => "my-cli"'),
+      );
+      // 双平台下 install 段也在条件块内
+      final installIndex = formula.indexOf('def install');
+      final installSection = formula.substring(installIndex);
+      expect(installSection, contains('if OS.mac?'));
+    });
   });
 }

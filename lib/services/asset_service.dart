@@ -2,6 +2,16 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 class AssetService {
+  /// 跨平台取路径最后一段：兼容 unix（`/`）与 Windows（`\`）分隔符。
+  ///
+  /// 配置的 asset 路径可能由任一平台书写（scoop 发布侧常在 Windows 上），
+  /// 远端 digest 按 asset 文件名匹配，必须统一解析到纯文件名。
+  static String basename(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final index = normalized.lastIndexOf('/');
+    return index >= 0 ? normalized.substring(index + 1) : normalized;
+  }
+
   Future<AssetInfo> getAssetInfo(String path) async {
     final file = File(path);
 
